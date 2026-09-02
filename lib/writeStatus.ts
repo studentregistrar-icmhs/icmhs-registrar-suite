@@ -1,9 +1,11 @@
 import { fetchSheetRows, updateRange, appendRow, appendRows, batchUpdateRanges } from "./googleSheets";
 import { findStudentRow } from "./rosterLookup";
-import { getTerm, TERMS } from "./terms";
-import { reconcile, STATUS_LABEL, LABEL_TO_FLAG, TERMINAL_STATUSES } from "./reconcile";
+import { getTerm, getPreviousTerm, TERMS } from "./terms";
+import { reconcile, STATUS_LABEL, LABEL_TO_FLAG, TERMINAL_STATUSES, CARRY_FORWARD_STATUSES } from "./reconcile";
 import { readFlagsAt, LAYOUT_FOR_WRITE, parseCampusRows } from "./parse";
 import { inheritedTerminalFlags } from "./statusLog";
+import { columnIndex } from "./columns";
+import { loadTermData } from "./loadTermData";
 
 export type WriteResult =
   | { ok: true }
@@ -275,53 +277,74 @@ function colLetter(index0: number): string {
 }
 
 /**
- * The dashboard already SHOWS inherited terminal statuses (see
- * lib/statusLog.ts) without anything being written to the sheet — that's
- * enough for the app itself, but leaves no trace for anyone auditing the
- * raw sheet directly. This writes an explicit row to STATUS LOG for every
- * student whose Graduated/Dropped status is currently only inferred, not
- * logged — so the sheet itself becomes the source of truth too, not just
- * the app's computation. Skips anyone who already has a matching row
- * (safe to re-run — never creates a duplicate for someone already synced,
- * even if a term's roster or flags haven't changed since the last sync).
+ * Bulk-carries Graduated / Dropped / Completed forward from the immediately
+ * previous term into THIS term's status column (only valid for a
+ * "live-column" term — that's the only kind with a single column to write
+ * into). Meant to be run once near the start of each new semester instead
+ * of registrars re-entering these three categories by hand, since they
+ * essentially never change once set.
+ *
+ * Only fills in students whose cell for this term is still blank — it
+ * never overwrites a value someone already set (manually, via the
+ * dashboard, or via a deferment approval), so it's always safe to re-run.
  */
-export async function syncInheritedTerminalStatuses(
-  syncedBy: string
-): Promise<{ ok: true; synced: string[] } | { ok: false; reason: "no-statuslog-term" }> {
-  const statusLogTerm = TERMS.find((t) => t.source.kind === "live-statuslog");
-  if (!statusLogTerm) return { ok: false, reason: "no-statuslog-term" };
+export type CarryForwardResult =
+  | { ok: true; updated: string[]; alreadySet: number }
+  | { ok: false; reason: "unsupported-term" | "no-previous-term" };
 
-  const [mainRows, nakuruRows, logRows] = await Promise.all([
-    fetchSheetRows("MAIN CAMPUS!A:Z"),
-    fetchSheetRows("NAKURU CAMPUS!A:X"),
-    fetchSheetRows("STATUS LOG!A:D").catch(() => []),
+export async function bulkCarryForwardStatuses(termSlug: string): Promise<CarryForwardResult> {
+  const term = getTerm(termSlug);
+  if (!term || term.source.kind !== "live-column") return { ok: false, reason: "unsupported-term" };
+
+  const previousTerm = getPreviousTerm(termSlug);
+  if (!previousTerm) return { ok: false, reason: "no-previous-term" };
+
+  const previousData = await loadTermData(previousTerm.slug);
+  if (!previousData) return { ok: false, reason: "no-previous-term" };
+
+  // Which admission numbers resolved to Graduated/Dropped/Completed in the
+  // previous term, and under which exact label (so the label written here
+  // matches STATUS_LABEL exactly, ready for the next term to read back).
+  const carryLabels = new Set(CARRY_FORWARD_STATUSES.map((k) => STATUS_LABEL[k]));
+  const candidates = new Map<string, string>();
+  for (const [label, students] of Object.entries(previousData.dashboard.studentsByStatus)) {
+    if (!carryLabels.has(label)) continue;
+    for (const s of students) candidates.set(s.admissionNo, label);
+  }
+
+  if (candidates.size === 0) return { ok: true, updated: [], alreadySet: 0 };
+
+  const col = term.source.column;
+  const colIdx = columnIndex(col);
+  const [mainRows, nakuruRows] = await Promise.all([
+    fetchSheetRows(`MAIN CAMPUS!A:${col}`),
+    fetchSheetRows(`NAKURU CAMPUS!A:${col}`),
   ]);
-  const roster = [...parseCampusRows(mainRows, "MAIN"), ...parseCampusRows(nakuruRows, "NAKURU")];
 
-  const latestLoggedStatus = new Map<string, string>();
-  for (let i = 1; i < logRows.length; i++) {
-    const [admissionNo, term, status] = logRows[i] ?? [];
-    if (!admissionNo || String(term).trim() !== statusLogTerm.label) continue;
-    latestLoggedStatus.set(String(admissionNo), String(status ?? ""));
+  const updates: { range: string; values: any[] }[] = [];
+  const updated: string[] = [];
+  let alreadySet = 0;
+
+  for (const [tabName, rows] of [["MAIN CAMPUS", mainRows], ["NAKURU CAMPUS", nakuruRows]] as const) {
+    for (let i = 2; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row) continue;
+      const admissionNo = row[1] != null ? String(row[1]).trim() : "";
+      const label = admissionNo ? candidates.get(admissionNo) : undefined;
+      if (!label) continue;
+      const currentValue = String(row[colIdx] ?? "").trim();
+      if (currentValue !== "") {
+        alreadySet++;
+        continue;
+      }
+      updates.push({ range: `${tabName}!${col}${i + 1}`, values: [label] });
+      updated.push(admissionNo);
+    }
   }
 
-  const today = new Date().toISOString().slice(0, 10);
-  const newRows: any[][] = [];
-  const synced: string[] = [];
-
-  for (const s of roster) {
-    const inherited = inheritedTerminalFlags(s.flagsMayAug, s.flagsJanApr);
-    if (!inherited) continue;
-    const r = reconcile(inherited);
-    const label = STATUS_LABEL[r.canonicalStatus as keyof typeof STATUS_LABEL];
-    if (latestLoggedStatus.get(s.admissionNo) === label) continue; // already logged correctly
-    newRows.push([s.admissionNo, statusLogTerm.label, label, today, `Auto-carried forward, synced by ${syncedBy}`]);
-    synced.push(s.admissionNo);
+  if (updates.length > 0) {
+    await batchUpdateRanges(updates);
   }
 
-  if (newRows.length > 0) {
-    await appendRows("STATUS LOG", newRows);
-  }
-
-  return { ok: true, synced };
+  return { ok: true, updated, alreadySet };
 }

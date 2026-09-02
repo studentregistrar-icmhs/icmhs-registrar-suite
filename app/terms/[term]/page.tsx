@@ -28,8 +28,8 @@ export default async function TermPage({ params }: { params: { term: string } })
         <h1 style={notReadyStyles.h1}>{term.label} isn't set up yet</h1>
         <p style={notReadyStyles.p}>{data.error}</p>
         <p style={notReadyStyles.p}>
-          {term.source.kind === "live-statuslog"
-            ? "Create the STATUS LOG tab in the Google Sheet (see README.md \u2014 “Setting up Sept–Dec 2026”) and this page will pick it up automatically."
+          {term.source.kind === "live-column"
+            ? `Add a "${term.source.column}" status column to both MAIN CAMPUS and NAKURU CAMPUS in the Google Sheet (see README.md) and this page will pick it up automatically.`
             : "Check that this term's data source is configured correctly in lib/terms.ts."}
         </p>
       </div>
@@ -42,7 +42,7 @@ export default async function TermPage({ params }: { params: { term: string } })
       initialConflicts={data.conflicts}
       termLabel={term.label}
       isLive={data.isLive}
-      isStatusLogTerm={term.source.kind === "live-statuslog"}
+      canCarryForward={term.source.kind === "live-column" && !!previousTerm}
       apiTermSlug={params.term}
       previousTermLabel={previousTerm?.label}
       previousData={previousData && !previousData.error ? previousData.dashboard : null}

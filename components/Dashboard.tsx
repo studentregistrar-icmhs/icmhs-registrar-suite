@@ -57,7 +57,7 @@ type Props = {
   initialConflicts: ConflictRow[];
   termLabel: string;
   isLive: boolean;
-  isStatusLogTerm?: boolean;
+  canCarryForward?: boolean;
   apiTermSlug: string;
   previousTermLabel?: string;
   previousData?: DashboardData | null;
@@ -66,7 +66,7 @@ type Props = {
 const AUTO_REFRESH_MS = 3 * 60 * 1000;
 
 export default function Dashboard({
-  initialData, initialConflicts, termLabel, isLive, isStatusLogTerm, apiTermSlug, previousTermLabel, previousData,
+  initialData, initialConflicts, termLabel, isLive, canCarryForward, apiTermSlug, previousTermLabel, previousData,
 }: Props) {
   const [data, setData] = useState(initialData);
   const [conflicts, setConflicts] = useState(initialConflicts);
@@ -87,14 +87,15 @@ export default function Dashboard({
   const [now, setNow] = useState(() => Date.now());
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const [bulkResolvingCategory, setBulkResolvingCategory] = useState<string | null>(null);
-  const [syncingTerminal, setSyncingTerminal] = useState(false);
+  const [carryingForward, setCarryingForward] = useState(false);
+  const [unmarkedQuery, setUnmarkedQuery] = useState("");
   const [markingId, setMarkingId] = useState<string | null>(null);
   const [markSelections, setMarkSelections] = useState<Record<string, string>>({});
   const [pendingResolve, setPendingResolve] = useState<
     | { type: "single"; admissionNo: string }
     | { type: "bulk"; category: string }
     | { type: "mark"; admissionNo: string; status: string }
-    | { type: "sync-terminal" }
+    | { type: "carry-forward" }
     | null
   >(null);
   const [resolverName, setResolverName] = useState("");
@@ -286,8 +287,14 @@ export default function Dashboard({
       const c = campus === "main" ? "MAIN" : "NAKURU";
       rows = rows.filter((s) => s.campus === c);
     }
+    if (unmarkedQuery.trim()) {
+      const q = unmarkedQuery.trim().toLowerCase();
+      rows = rows.filter(
+        (s) => s.name.toLowerCase().includes(q) || s.admissionNo.toLowerCase().includes(q)
+      );
+    }
     return rows;
-  }, [data, campus]);
+  }, [data, campus, unmarkedQuery]);
 
   const cleanCount = total - conflicts.length - unmarked.length;
   const qualityPct = total ? ((cleanCount / total) * 100).toFixed(1) : "0.0";
@@ -392,30 +399,36 @@ export default function Dashboard({
     }
   }
 
-  async function handleSyncTerminal(password: string, syncedBy: string) {
-    setSyncingTerminal(true);
+  async function handleCarryForward(password: string) {
+    setCarryingForward(true);
     try {
-      const res = await fetch("/api/status-log/sync-terminal", {
+      const res = await fetch("/api/carry-forward", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password, syncedBy }),
+        body: JSON.stringify({ termSlug: apiTermSlug, password }),
       });
       const json = await res.json();
       if (res.status === 401) {
         alert("Wrong password — nothing was changed.");
       } else if (json.ok) {
-        window.localStorage.setItem("icmhs-resolver-name", syncedBy);
-        if (json.synced.length === 0) {
-          alert("Nothing to sync — every inherited Graduated/Dropped status is already logged.");
+        if (json.updated.length === 0) {
+          alert(
+            json.alreadySet > 0
+              ? "Nothing left to carry forward — every eligible student already has a status set this term."
+              : "Nothing to carry forward — no Graduated/Dropped/Completed students found in the previous term."
+          );
         } else {
-          alert(`Logged ${json.synced.length} student(s) to STATUS LOG.`);
+          alert(
+            `Set ${json.updated.length} student(s) to Graduated/Dropped/Completed for ${termLabel}` +
+              (json.alreadySet > 0 ? ` (${json.alreadySet} already had a status and were left alone).` : ".")
+          );
           await handleRefresh();
         }
       } else {
-        alert(`Couldn't sync: ${json.reason ?? "unknown error"}`);
+        alert(`Couldn't carry forward statuses: ${json.reason ?? "unknown error"}`);
       }
     } finally {
-      setSyncingTerminal(false);
+      setCarryingForward(false);
     }
   }
 
@@ -432,7 +445,7 @@ export default function Dashboard({
     } else if (pendingResolve.type === "mark") {
       await handleMarkUnmarked(pendingResolve.admissionNo, pendingResolve.status, password, name);
     } else {
-      await handleSyncTerminal(password, name);
+      await handleCarryForward(password);
     }
   }
 
@@ -529,13 +542,13 @@ export default function Dashboard({
               Clear filters
             </button>
           )}
-          {isStatusLogTerm && (
+          {canCarryForward && (
             <button
-              disabled={syncingTerminal}
-              onClick={() => setPendingResolve({ type: "sync-terminal" })}
+              disabled={carryingForward}
+              onClick={() => setPendingResolve({ type: "carry-forward" })}
               style={styles.syncBtn}
             >
-              {syncingTerminal ? "Syncing…" : "Sync terminal statuses to log"}
+              {carryingForward ? "Carrying forward…" : "Carry forward Graduated/Dropped/Completed"}
             </button>
           )}
           {isLive && (
@@ -900,11 +913,31 @@ export default function Dashboard({
               <h2 style={styles.h2}>Unmarked Students</h2>
               <span style={styles.cardNote}>students with no status column marked at all this term</span>
             </div>
-            {unmarked.length > 0 && <button onClick={exportUnmarked} style={styles.exportBtn}>Export CSV</button>}
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <div style={{ position: "relative" }}>
+                <svg
+                  width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={C.slate} strokeWidth="2.5"
+                  strokeLinecap="round" strokeLinejoin="round"
+                  style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}
+                >
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+                <input
+                  value={unmarkedQuery}
+                  onChange={(e) => setUnmarkedQuery(e.target.value)}
+                  placeholder="Search unmarked…"
+                  style={styles.unmarkedSearch}
+                />
+              </div>
+              {unmarked.length > 0 && <button onClick={exportUnmarked} style={styles.exportBtn}>Export CSV</button>}
+            </div>
           </div>
           {unmarked.length === 0 ? (
             <div style={{ padding: "20px 0", color: C.slate }}>
-              No unmarked students — everyone has at least one status flag set. 🎉
+              {unmarkedQuery.trim()
+                ? "No unmarked students match that search."
+                : "No unmarked students — everyone has at least one status flag set. 🎉"}
             </div>
           ) : (
             <div style={{ overflowX: "auto" }}>
@@ -1002,8 +1035,8 @@ export default function Dashboard({
         <div style={modalStyles.overlay} onClick={() => { setPendingResolve(null); setResolverPassword(""); }}>
           <div style={modalStyles.box} onClick={(e) => e.stopPropagation()}>
             <h3 style={modalStyles.title}>
-              {pendingResolve.type === "sync-terminal"
-                ? "Confirm sync"
+              {pendingResolve.type === "carry-forward"
+                ? "Confirm carry forward"
                 : pendingResolve.type === "mark"
                 ? "Confirm status update"
                 : "Confirm resolve"}
@@ -1015,7 +1048,7 @@ export default function Dashboard({
                 ? `This will overwrite the conflicting status flags for every student resolving to "${pendingResolve.category}" in the live sheet.`
                 : pendingResolve.type === "mark"
                 ? `This will set ${pendingResolve.admissionNo}'s status to "${pendingResolve.status}" for ${termLabel} in the live sheet.`
-                : `This will append a STATUS LOG row for every student whose Graduated/Dropped status is currently inherited but not yet logged.`}
+                : `This will fill in "Graduated", "Dropped" or "Completed" for ${termLabel} on every student who had one of those statuses in ${previousTermLabel ?? "the previous term"} and doesn't already have a status set here — nothing already set is overwritten.`}
               {" "}Enter your name and the resolve password to continue.
             </p>
             <label style={modalStyles.label}>Your name</label>
@@ -1288,6 +1321,7 @@ const styles: Record<string, React.CSSProperties> = {
   kpiHint: { fontSize: 10.5, color: C.teal, marginTop: 6, fontFamily: "IBM Plex Mono, monospace" },
   exportBtn: { border: `1px solid ${C.line}`, background: "#fff", color: C.ink, padding: "7px 14px", borderRadius: 6, fontSize: 12.5, fontWeight: 600, cursor: "pointer" },
   globalSearch: { border: `1px solid ${C.line}`, borderRadius: 8, padding: "9px 14px", fontSize: 13, width: 230, outline: "none", background: "#fff" },
+  unmarkedSearch: { border: `1px solid ${C.line}`, borderRadius: 6, padding: "6px 10px 6px 26px", fontSize: 12, width: 170, outline: "none", background: "#fff", color: C.ink, fontFamily: "Inter, sans-serif" },
   globalDropdown: { position: "absolute", top: "calc(100% + 6px)", left: 0, width: 340, maxHeight: 380, overflowY: "auto", background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, boxShadow: "0 8px 24px rgba(18,42,40,0.15)", zIndex: 60 },
   globalRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "9px 14px", borderTop: `1px solid ${C.line}` },
   globalStatusPill: { fontSize: 10.5, fontFamily: "IBM Plex Mono, monospace", color: C.teal, background: "#E5F1EF", borderRadius: 12, padding: "3px 9px", whiteSpace: "nowrap" },

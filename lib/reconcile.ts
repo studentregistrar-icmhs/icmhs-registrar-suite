@@ -80,6 +80,17 @@ Object.assign(LABEL_TO_FLAG, {
  */
 export const TERMINAL_STATUSES: (keyof RawFlags)[] = ["graduation", "dropped"];
 
+/**
+ * Statuses that, once set, essentially never change term to term — so
+ * rather than a registrar manually re-entering them every semester, the
+ * bulk carry-forward tool (see lib/writeStatus.ts's bulkCarryForwardStatuses)
+ * copies them into a new live-column term automatically. Deliberately a
+ * separate list from TERMINAL_STATUSES above: Completed shouldn't trigger
+ * the terminal-lock (a Completed student's legacy-term flags can still be
+ * corrected), it should just get carried forward like Graduated/Dropped do.
+ */
+export const CARRY_FORWARD_STATUSES: (keyof RawFlags)[] = ["graduation", "dropped", "completed"];
+
 export type Reconciled = {
   canonicalStatus: keyof RawFlags | "UNMARKED";
   setFlags: (keyof RawFlags)[];
