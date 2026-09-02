@@ -3,10 +3,11 @@ import path from "path";
 import { getTerm, getTermPeriod } from "./terms";
 import { fetchSheetRows } from "./googleSheets";
 import { parseCampusRows, toReconcilable, Student } from "./parse";
-import { buildFromStatusLog } from "./statusLog";
+import { buildFromStatusLog, buildFromColumn, extractColumnStatus } from "./statusLog";
 import { buildDashboardData, DashboardData } from "./aggregate";
 import { buildConflictReport, ConflictRow } from "./reconcile";
 import { isFutureIntake } from "./intake";
+import { columnIndex } from "./columns";
 
 export type TermData = {
   dashboard: DashboardData;
@@ -75,6 +76,29 @@ export async function loadTermData(slug: string): Promise<TermData | null> {
         ...parseCampusRows(nakuruRows, "NAKURU"),
       ];
       const reconcilable = buildFromStatusLog(excludeFutureIntakes(roster), logRows, term.source.termLabel);
+      return {
+        dashboard: buildDashboardData(reconcilable),
+        conflicts: buildConflictReport(reconcilable),
+        isLive: true,
+      };
+    }
+
+    if (term.source.kind === "live-column") {
+      const col = term.source.column;
+      const [mainRows, nakuruRows] = await Promise.all([
+        fetchSheetRows(`MAIN CAMPUS!A:${col}`),
+        fetchSheetRows(`NAKURU CAMPUS!A:${col}`),
+      ]);
+      const roster = [
+        ...parseCampusRows(mainRows, "MAIN"),
+        ...parseCampusRows(nakuruRows, "NAKURU"),
+      ];
+      const colIdx = columnIndex(col);
+      const statusByAdmission = new Map([
+        ...extractColumnStatus(mainRows, colIdx),
+        ...extractColumnStatus(nakuruRows, colIdx),
+      ]);
+      const reconcilable = buildFromColumn(excludeFutureIntakes(roster), statusByAdmission);
       return {
         dashboard: buildDashboardData(reconcilable),
         conflicts: buildConflictReport(reconcilable),

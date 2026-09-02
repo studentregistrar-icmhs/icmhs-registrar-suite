@@ -85,3 +85,46 @@ export function buildFromStatusLog(
       flagsFromLabel(latestStatusByAdmission.get(r.admissionNo) ?? ""),
   }));
 }
+
+/**
+ * Reads a single-column status (e.g. the "SEPT-DEC 2026 STATUS" column) directly
+ * off the raw MAIN CAMPUS / NAKURU CAMPUS rows — one admission number per row, so
+ * no separate log/join is needed the way buildFromStatusLog needs one. Admission
+ * number is always column B (index 1), matching LAYOUT.MAIN/NAKURU in parse.ts.
+ */
+export function extractColumnStatus(rows: any[][], colIndex: number): Map<string, string> {
+  const map = new Map<string, string>();
+  for (let i = 2; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row) continue;
+    const admissionNo = row[1];
+    if (admissionNo === undefined || admissionNo === null || String(admissionNo).trim() === "") continue;
+    map.set(String(admissionNo), String(row[colIndex] ?? "").trim());
+  }
+  return map;
+}
+
+/**
+ * Same idea as buildFromStatusLog, but for a "live-column" term: the status text
+ * lives on the student's own roster row (column AA etc.) instead of a separate
+ * append-only log. Terminal statuses from Jan-Apr/May-Aug still take precedence,
+ * for the same reason documented on inheritedTerminalFlags above.
+ */
+export function buildFromColumn(
+  roster: Roster,
+  statusByAdmission: Map<string, string>
+): ReconcilableStudent[] {
+  return roster.map((r) => ({
+    admissionNo: r.admissionNo,
+    name: r.name,
+    courseCode: r.courseCode,
+    courseName: r.courseName,
+    gender: r.gender,
+    contacts: r.contacts,
+    intakeYear: r.intakeYear,
+    campus: r.campus,
+    flags:
+      inheritedTerminalFlags(r.flagsMayAug, r.flagsJanApr) ??
+      flagsFromLabel(statusByAdmission.get(r.admissionNo) ?? ""),
+  }));
+}

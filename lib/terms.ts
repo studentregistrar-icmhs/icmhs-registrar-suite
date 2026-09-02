@@ -6,6 +6,7 @@
 export type TermSource =
   | { kind: "live-legacy"; block: "flagsJanApr" | "flagsMayAug" }
   | { kind: "live-statuslog"; termLabel: string } // matches the "Term" column in the STATUS LOG tab
+  | { kind: "live-column"; column: string } // single status column (e.g. "AA") on MAIN CAMPUS / NAKURU CAMPUS
   | { kind: "static"; file: string }; // path under /data/historical/
 
 export type TermConfig = {
@@ -30,7 +31,11 @@ export const TERMS: TermConfig[] = [
   {
     slug: "sept-dec-2026",
     label: "Sept – Dec 2026",
-    source: { kind: "live-statuslog", termLabel: "SEPT-DEC 2026" },
+    // As of the Sept-Dec 2026 semester, the STATUS LOG tab is retired in
+    // favour of a single "SEPT-DEC 2026 STATUS" column (column AA) added
+    // directly to the MAIN CAMPUS and NAKURU CAMPUS tabs — same idea as the
+    // Jan-Apr/May-Aug flag columns, just one column instead of eight.
+    source: { kind: "live-column", column: "AA" },
   },
   // Previous years land here once their Excel files are parsed, e.g.:
   // {
@@ -70,7 +75,7 @@ export function getTermPeriod(term: TermConfig): { year: number; endMonth: numbe
   if (term.source.kind === "live-legacy") {
     return { year, endMonth: term.source.block === "flagsJanApr" ? 4 : 8 };
   }
-  if (term.source.kind === "live-statuslog") {
+  if (term.source.kind === "live-statuslog" || term.source.kind === "live-column") {
     return { year, endMonth: 12 };
   }
   return null;

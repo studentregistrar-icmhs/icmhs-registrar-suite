@@ -4,6 +4,11 @@ import { SEMESTERS } from "@/lib/deferments/deferment";
 
 const VALID_SEMESTERS = SEMESTERS.map((s) => s.value);
 
+// No dynamic function usage here either — same static-caching trap as
+// /api/deferments/requests. Force fresh reads so a registrar-updated
+// deadline shows immediately, not after an unpredictable cache delay.
+export const dynamic = "force-dynamic";
+
 // Public — the student form needs this to know which semesters are still
 // selectable and what to show in the countdown banner. No student data here,
 // just intake/deadline configuration. (middleware.ts explicitly allows GET

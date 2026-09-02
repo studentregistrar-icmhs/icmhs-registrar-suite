@@ -187,24 +187,24 @@ export async function lookupStudentByAdmissionNumber(
 }
 
 // ---------------------------------------------------------------------------
-// Optional: mirror deferment status onto the campus tabs for glanceability
+// Deferment status -> campus tab status column
 //
-// STATUS LOG remains the source of truth (updateDefermentStatusInSheet,
-// above) — this additionally copies the same status text into a single
-// column on MAIN CAMPUS / NAKURU CAMPUS so it's visible without switching
-// tabs. Deliberately NOT auto-appended: this app doesn't know how wide
-// your campus tabs currently are, and guessing a column risks overwriting
-// real data. Instead:
+// As of Sept-Dec 2026, this IS the source of truth for a student's deferment
+// status — the STATUS LOG tab is retired (updateDefermentStatusInSheet above
+// is no longer called, kept only for reference/rollback). This writes the
+// status text into the single status column on MAIN CAMPUS / NAKURU CAMPUS
+// (lib/terms.ts' "live-column" source for the term reads that exact column),
+// so an approval/denial here shows up on the dashboard immediately.
 //
-//   1. In the Sheet, manually add a header column on BOTH MAIN CAMPUS and
-//      NAKURU CAMPUS (same column letter on both), e.g. titled
-//      "SEPT-DEC 2026 STATUS".
+// Setup, once per new term:
+//   1. In the Sheet, add a header column on BOTH MAIN CAMPUS and NAKURU
+//      CAMPUS (same column letter on both), e.g. "SEPT-DEC 2026 STATUS".
 //   2. Set CAMPUS_STATUS_MIRROR_COLUMN in your environment variables to
-//      that column's letter (e.g. "AC").
+//      that column's letter (e.g. "AA").
+//   3. Update lib/terms.ts' entry for the term to the same column letter.
 //
-// If that env var isn't set, this is a no-op — STATUS LOG alone still
-// works exactly as before. Failures here never block an approval; they're
-// caught and logged the same way the STATUS LOG write already is.
+// If CAMPUS_STATUS_MIRROR_COLUMN isn't set, this is a no-op. Failures here
+// never block an approval — they're caught and logged, same as before.
 // ---------------------------------------------------------------------------
 
 const CAMPUS_TAB_BY_NAME: Record<string, string> = {

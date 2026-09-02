@@ -85,6 +85,14 @@ export async function updateStudentStatus(opts: {
     return { ok: true };
   }
 
+  if (term.source.kind === "live-column") {
+    const loc = await findStudentRow(admissionNo);
+    if (!loc) return { ok: false, reason: "not-found" };
+    const tabName = loc.campus === "MAIN" ? "MAIN CAMPUS" : "NAKURU CAMPUS";
+    await updateRange(`${tabName}!${term.source.column}${loc.sheetRowNumber}`, [newStatusLabel]);
+    return { ok: true };
+  }
+
   return { ok: false, reason: "unsupported-term" }; // static historical terms are read-only
 }
 
