@@ -185,3 +185,62 @@ export async function lookupStudentByAdmissionNumber(
 
   return { found: false };
 }
+
+// ---------------------------------------------------------------------------
+// Optional: mirror deferment status onto the campus tabs for glanceability
+//
+// STATUS LOG remains the source of truth (updateDefermentStatusInSheet,
+// above) — this additionally copies the same status text into a single
+// column on MAIN CAMPUS / NAKURU CAMPUS so it's visible without switching
+// tabs. Deliberately NOT auto-appended: this app doesn't know how wide
+// your campus tabs currently are, and guessing a column risks overwriting
+// real data. Instead:
+//
+//   1. In the Sheet, manually add a header column on BOTH MAIN CAMPUS and
+//      NAKURU CAMPUS (same column letter on both), e.g. titled
+//      "SEPT-DEC 2026 STATUS".
+//   2. Set CAMPUS_STATUS_MIRROR_COLUMN in your environment variables to
+//      that column's letter (e.g. "AC").
+//
+// If that env var isn't set, this is a no-op — STATUS LOG alone still
+// works exactly as before. Failures here never block an approval; they're
+// caught and logged the same way the STATUS LOG write already is.
+// ---------------------------------------------------------------------------
+
+const CAMPUS_TAB_BY_NAME: Record<string, string> = {
+  "Thika Main Campus": "MAIN CAMPUS",
+  "Nakuru Campus": "NAKURU CAMPUS",
+};
+
+export async function mirrorDefermentStatusToCampusTab(
+  campus: string,
+  admissionNumber: string,
+  statusText: string
+): Promise<{ skipped: boolean; found?: boolean; sheet?: string; row?: number; reason?: string }> {
+  const mirrorColumn = process.env.CAMPUS_STATUS_MIRROR_COLUMN;
+  if (!mirrorColumn) {
+    return { skipped: true, reason: "CAMPUS_STATUS_MIRROR_COLUMN not set" };
+  }
+
+  const tabName = CAMPUS_TAB_BY_NAME[campus];
+  if (!tabName) {
+    console.warn(`Unrecognized campus "${campus}" — skipping mirror write.`);
+    return { skipped: true, reason: "unrecognized campus" };
+  }
+
+  if (!admissionNumber) {
+    return { skipped: true, reason: "no admission number" };
+  }
+
+  // Admission number lives in column B on both campus tabs (same column
+  // used by findStudentInTab above).
+  const rowNumber = await findRowNumberInTab(tabName, admissionNumber, "B");
+
+  if (rowNumber) {
+    await updateRange(`${tabName}!${mirrorColumn}${rowNumber}`, [statusText]);
+    return { skipped: false, found: true, sheet: tabName, row: rowNumber };
+  }
+
+  console.warn(`Admission number ${admissionNumber} not found in ${tabName} — skipping mirror write.`);
+  return { skipped: false, found: false };
+}

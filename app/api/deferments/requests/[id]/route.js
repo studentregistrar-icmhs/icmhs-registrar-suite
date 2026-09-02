@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { sql } from "@/lib/deferments/db";
-import { updateDefermentStatusInSheet } from "@/lib/googleSheets";
+import { updateDefermentStatusInSheet, mirrorDefermentStatusToCampusTab } from "@/lib/googleSheets";
 
 const ALLOWED_STATUSES = ["pending", "approved", "denied"];
 
@@ -36,8 +36,10 @@ export async function PATCH(request, context) {
       if (status === "approved") {
         const label = `${rows[0].type_of_deferment || "Deferment"} - Approved`;
         await updateDefermentStatusInSheet(rows[0].admission_number, label);
+        await mirrorDefermentStatusToCampusTab(rows[0].campus, rows[0].admission_number, label);
       } else if (status === "denied" || status === "pending") {
         await updateDefermentStatusInSheet(rows[0].admission_number, "");
+        await mirrorDefermentStatusToCampusTab(rows[0].campus, rows[0].admission_number, "");
       }
     } catch (sheetErr) {
       console.error("Google Sheets update failed:", sheetErr);
