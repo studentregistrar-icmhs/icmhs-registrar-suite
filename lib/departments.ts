@@ -48,7 +48,7 @@ export const DEPARTMENT_BY_COURSE_CODE: Record<string, string> = {
   CIT: "School of Health Records & Information Technology",
   CPTTT: "School of Perioperative Theatre Technology",
   DCDST: "School of Health and Social Sciences",
-  CP: "School of Health Records & Information Technology",
+  CP: "Other",
   DAB: "School of Applied Sciences",
   DCPT: "School of Health and Social Sciences",
   DFP: "School of Human Nutrition and Dietetics",
