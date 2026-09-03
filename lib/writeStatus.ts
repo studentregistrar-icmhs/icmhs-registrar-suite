@@ -467,3 +467,47 @@ export async function bulkUploadStatuses(
 
   return { ok: true, results };
 }
+
+/**
+ * Sets many currently-Unmarked students to the same status at once — the
+ * "select 50 students on the Unmarked list, pick a status, Set All" flow,
+ * as an alternative to CSV bulk upload for a quick ad-hoc batch. Delegates
+ * to bulkUploadStatuses for a "live-column" term (one batched write); for a
+ * "live-legacy" term there's no cheap batch path (each student's flags live
+ * in their own 8-column block), so it goes one at a time through the exact
+ * same markUnmarkedStudent path the single "Set" button already uses —
+ * same "must currently be Unmarked" safety check, same RESOLVE LOG entry.
+ */
+export type BulkMarkOutcome = { admissionNo: string; ok: true } | { admissionNo: string; ok: false; reason: string; detail?: string };
+
+export async function bulkMarkUnmarked(
+  termSlug: string,
+  admissionNos: string[],
+  status: string,
+  markedBy: string
+): Promise<{ ok: true; results: BulkMarkOutcome[] } | { ok: false; reason: string }> {
+  const term = getTerm(termSlug);
+  if (!term) return { ok: false, reason: "unsupported-term" };
+  if (!LABEL_TO_FLAG[status.trim()]) return { ok: false, reason: "invalid-status" };
+
+  if (term.source.kind === "live-column") {
+    const rows = admissionNos.map((admissionNo) => ({ admissionNo, status }));
+    return bulkUploadStatuses(termSlug, rows, false);
+  }
+
+  const results: BulkMarkOutcome[] = [];
+  for (const admissionNo of admissionNos) {
+    const r = await markUnmarkedStudent(admissionNo, termSlug, status, markedBy);
+    results.push(
+      r.ok
+        ? { admissionNo, ok: true }
+        : {
+            admissionNo,
+            ok: false,
+            reason: r.reason,
+            detail: r.reason === "terminal-lock" ? `${r.blockingStatus} in ${r.blockingTerm}` : undefined,
+          }
+    );
+  }
+  return { ok: true, results };
+}

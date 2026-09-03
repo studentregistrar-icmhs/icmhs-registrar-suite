@@ -172,7 +172,6 @@ export default function Dashboard({
   const [pendingResolve, setPendingResolve] = useState<
     | { type: "single"; admissionNo: string }
     | { type: "bulk"; category: string }
-    | { type: "mark"; admissionNo: string; status: string }
     | { type: "carry-forward" }
     | null
   >(null);
@@ -446,13 +445,13 @@ export default function Dashboard({
     }
   }
 
-  async function handleMarkUnmarked(admissionNo: string, status: string, password: string, markedBy: string) {
+  async function handleMarkUnmarked(admissionNo: string, status: string, markedBy: string) {
     setMarkingId(admissionNo);
     try {
       const res = await fetch("/api/unmarked/mark", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ admissionNo, termSlug: apiTermSlug, status, password, markedBy }),
+        body: JSON.stringify({ admissionNo, termSlug: apiTermSlug, status, markedBy }),
       });
       const json = await res.json();
       if (json.ok) {
@@ -463,8 +462,6 @@ export default function Dashboard({
           return next;
         });
         await handleRefresh();
-      } else if (res.status === 401) {
-        alert("Wrong password — nothing was changed.");
       } else if (json.reason === "terminal-lock") {
         alert(
           `Can't set that status — ${admissionNo} was already marked ${json.blockingStatus} in ${json.blockingTerm}, which is treated as final.`
@@ -474,6 +471,45 @@ export default function Dashboard({
       }
     } finally {
       setMarkingId(null);
+    }
+  }
+
+  const [selectedUnmarked, setSelectedUnmarked] = useState<Set<string>>(new Set());
+  const [bulkMarkStatus, setBulkMarkStatus] = useState("");
+  const [bulkMarkBusy, setBulkMarkBusy] = useState(false);
+
+  async function handleBulkMarkUnmarked(status: string, markedBy: string) {
+    const admissionNos = Array.from(selectedUnmarked);
+    if (admissionNos.length === 0) return;
+    setBulkMarkBusy(true);
+    try {
+      const res = await fetch("/api/unmarked/mark-bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ termSlug: apiTermSlug, admissionNos, status, markedBy }),
+      });
+      const json = await res.json();
+      if (!json.ok) {
+        alert(`Couldn't bulk-set statuses: ${json.reason ?? "unknown error"}`);
+        return;
+      }
+      window.localStorage.setItem("icmhs-resolver-name", markedBy);
+      const succeeded = json.results.filter((r: any) => r.ok);
+      const failed = json.results.filter((r: any) => !r.ok);
+      setSelectedUnmarked(new Set());
+      setBulkMarkStatus("");
+      if (failed.length === 0) {
+        alert(`Set ${succeeded.length} student(s) to "${status}".`);
+      } else {
+        alert(
+          `Set ${succeeded.length} of ${json.results.length} student(s) to "${status}".\n\n` +
+            `Not updated:\n` +
+            failed.map((f: any) => `${f.admissionNo} — ${f.detail || f.reason}`).join("\n")
+        );
+      }
+      if (succeeded.length > 0) await handleRefresh();
+    } finally {
+      setBulkMarkBusy(false);
     }
   }
 
@@ -520,8 +556,6 @@ export default function Dashboard({
       await handleResolve(pendingResolve.admissionNo, password, name);
     } else if (pendingResolve.type === "bulk") {
       await handleBulkResolve(pendingResolve.category, password, name);
-    } else if (pendingResolve.type === "mark") {
-      await handleMarkUnmarked(pendingResolve.admissionNo, pendingResolve.status, password, name);
     } else {
       await handleCarryForward(password);
     }
@@ -1016,6 +1050,36 @@ export default function Dashboard({
               {unmarked.length > 0 && <button onClick={exportUnmarked} style={styles.exportBtn}>Export CSV</button>}
             </div>
           </div>
+          {unmarked.length > 0 && (
+            <div style={styles.bulkMarkBar}>
+              <span style={{ fontSize: 12.5, color: C.slate }}>
+                {selectedUnmarked.size > 0 ? `${selectedUnmarked.size} selected` : "Select students below to set several at once"}
+              </span>
+              <select
+                style={styles.markSelect}
+                value={bulkMarkStatus}
+                disabled={selectedUnmarked.size === 0 || bulkMarkBusy}
+                onChange={(e) => setBulkMarkStatus(e.target.value)}
+              >
+                <option value="" disabled>Set selected to…</option>
+                {MARK_STATUS_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+              <button
+                style={styles.resolveBtn}
+                disabled={selectedUnmarked.size === 0 || !bulkMarkStatus || bulkMarkBusy}
+                onClick={() => handleBulkMarkUnmarked(bulkMarkStatus, resolverName.trim() || "Unknown")}
+              >
+                {bulkMarkBusy ? "Setting…" : `Set ${selectedUnmarked.size || ""} selected`}
+              </button>
+              {selectedUnmarked.size > 0 && (
+                <button style={styles.clearFilterBtn} onClick={() => setSelectedUnmarked(new Set())}>
+                  Clear selection
+                </button>
+              )}
+            </div>
+          )}
           {unmarked.length === 0 ? (
             <div style={{ padding: "20px 0", color: C.slate }}>
               {unmarkedQuery.trim()
@@ -1027,6 +1091,20 @@ export default function Dashboard({
               <table style={styles.table}>
                 <thead>
                   <tr>
+                    <th style={styles.th}>
+                      <input
+                        type="checkbox"
+                        checked={unmarked.length > 0 && unmarked.every((s) => selectedUnmarked.has(s.admissionNo))}
+                        onChange={(e) => {
+                          setSelectedUnmarked((prev) => {
+                            const next = new Set(prev);
+                            if (e.target.checked) unmarked.forEach((s) => next.add(s.admissionNo));
+                            else unmarked.forEach((s) => next.delete(s.admissionNo));
+                            return next;
+                          });
+                        }}
+                      />
+                    </th>
                     <th style={styles.th}>Admission No.</th>
                     <th style={{ ...styles.th, textAlign: "left" }}>Name</th>
                     <th style={styles.th}>Campus</th>
@@ -1037,6 +1115,20 @@ export default function Dashboard({
                 <tbody>
                   {unmarked.map((s, i) => (
                     <tr key={s.admissionNo + i} style={i % 2 ? styles.trOdd : undefined}>
+                      <td style={styles.tdNum}>
+                        <input
+                          type="checkbox"
+                          checked={selectedUnmarked.has(s.admissionNo)}
+                          onChange={(e) => {
+                            setSelectedUnmarked((prev) => {
+                              const next = new Set(prev);
+                              if (e.target.checked) next.add(s.admissionNo);
+                              else next.delete(s.admissionNo);
+                              return next;
+                            });
+                          }}
+                        />
+                      </td>
                       <td style={styles.tdCode}>
                         <Link href={`/students/${encodeURIComponent(s.admissionNo)}`} style={{ color: C.teal }}>
                           {s.admissionNo}
@@ -1068,11 +1160,7 @@ export default function Dashboard({
                             style={styles.resolveBtn}
                             disabled={!markSelections[s.admissionNo] || markingId === s.admissionNo}
                             onClick={() =>
-                              setPendingResolve({
-                                type: "mark",
-                                admissionNo: s.admissionNo,
-                                status: markSelections[s.admissionNo],
-                              })
+                              handleMarkUnmarked(s.admissionNo, markSelections[s.admissionNo], resolverName.trim() || "Unknown")
                             }
                           >
                             {markingId === s.admissionNo ? "Setting…" : "Set"}
@@ -1087,9 +1175,10 @@ export default function Dashboard({
           )}
           <div style={styles.ledgerFoot}>
             Likely cause: the student's row exists but none of the 8 status columns were filled in
-            for this term yet. Pick a status from the dropdown and hit "Set" to write it directly to
-            the live sheet — same password-protected confirmation as "Resolve" above — or mark the
-            correct status at the source and it'll clear on next refresh either way.
+            for this term yet. Pick a status and hit "Set" to write it directly to the live sheet —
+            one click, no confirmation needed — or select several with the checkboxes and use
+            "Set selected" above to do them all at once. Or mark the correct status at the source
+            and it'll clear on next refresh either way.
           </div>
         </section>
         </>
@@ -1118,19 +1207,13 @@ export default function Dashboard({
         <div style={modalStyles.overlay} onClick={() => { setPendingResolve(null); setResolverPassword(""); }}>
           <div style={modalStyles.box} onClick={(e) => e.stopPropagation()}>
             <h3 style={modalStyles.title}>
-              {pendingResolve.type === "carry-forward"
-                ? "Confirm carry forward"
-                : pendingResolve.type === "mark"
-                ? "Confirm status update"
-                : "Confirm resolve"}
+              {pendingResolve.type === "carry-forward" ? "Confirm carry forward" : "Confirm resolve"}
             </h3>
             <p style={modalStyles.body}>
               {pendingResolve.type === "single"
                 ? `This will overwrite the conflicting status flags for ${pendingResolve.admissionNo} in the live sheet.`
                 : pendingResolve.type === "bulk"
                 ? `This will overwrite the conflicting status flags for every student resolving to "${pendingResolve.category}" in the live sheet.`
-                : pendingResolve.type === "mark"
-                ? `This will set ${pendingResolve.admissionNo}'s status to "${pendingResolve.status}" for ${termLabel} in the live sheet.`
                 : `This will fill in "Graduated", "Dropped" or "Completed" for ${termLabel} on every student who had one of those statuses in ${previousTermLabel ?? "the previous term"} and doesn't already have a status set here — nothing already set is overwritten.`}
               {" "}Enter your name and the resolve password to continue.
             </p>
@@ -1163,7 +1246,7 @@ export default function Dashboard({
                 disabled={!resolverName.trim() || !resolverPassword.trim()}
                 onClick={confirmPendingResolve}
               >
-                {pendingResolve.type === "mark" ? "Confirm update" : "Confirm resolve"}
+                Confirm resolve
               </button>
             </div>
           </div>
@@ -1602,6 +1685,7 @@ const styles: Record<string, React.CSSProperties> = {
   footer: { fontSize: 11.5, color: C.slate, textAlign: "center", marginTop: 8, fontFamily: "IBM Plex Mono, monospace" },
   resolveBtn: { border: `1px solid ${C.teal}`, background: "#fff", color: C.teal, borderRadius: 6, padding: "4px 10px", fontSize: 11.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" },
   markSelect: { border: `1px solid ${C.line}`, background: "#fff", color: C.ink, borderRadius: 6, padding: "4px 6px", fontSize: 11.5, fontFamily: "Inter, sans-serif", cursor: "pointer" },
+  bulkMarkBar: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: "#F5F7F2", border: `1px solid ${C.line}`, borderRadius: 8, padding: "8px 12px", marginBottom: 12 },
   bulkRow: { display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, margin: "4px 0 14px" },
   bulkRowLabel: { fontSize: 11.5, color: C.slate, fontWeight: 600, marginRight: 2 },
   bulkResolveBtn: { border: `1px solid ${C.line}`, background: C.bg, color: C.ink, borderRadius: 6, padding: "5px 11px", fontSize: 11.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" },
