@@ -8,7 +8,7 @@ import {
 } from "recharts";
 import type { DashboardData } from "@/lib/aggregate";
 import type { ConflictRow } from "@/lib/reconcile";
-import { toCsv, downloadCsv } from "@/lib/csv";
+import { toCsv, downloadCsv, parseCsv } from "@/lib/csv";
 import { getDepartment } from "@/lib/departments";
 import { parseIntake } from "@/lib/intake";
 
@@ -58,6 +58,7 @@ type Props = {
   termLabel: string;
   isLive: boolean;
   canCarryForward?: boolean;
+  isColumnTerm?: boolean;
   apiTermSlug: string;
   previousTermLabel?: string;
   previousData?: DashboardData | null;
@@ -66,7 +67,7 @@ type Props = {
 const AUTO_REFRESH_MS = 3 * 60 * 1000;
 
 export default function Dashboard({
-  initialData, initialConflicts, termLabel, isLive, canCarryForward, apiTermSlug, previousTermLabel, previousData,
+  initialData, initialConflicts, termLabel, isLive, canCarryForward, isColumnTerm, apiTermSlug, previousTermLabel, previousData,
 }: Props) {
   const [data, setData] = useState(initialData);
   const [conflicts, setConflicts] = useState(initialConflicts);
@@ -88,6 +89,83 @@ export default function Dashboard({
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const [bulkResolvingCategory, setBulkResolvingCategory] = useState<string | null>(null);
   const [carryingForward, setCarryingForward] = useState(false);
+
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkFileName, setBulkFileName] = useState("");
+  const [bulkRows, setBulkRows] = useState<{ admissionNo: string; status: string }[]>([]);
+  const [bulkOverride, setBulkOverride] = useState(false);
+  const [bulkName, setBulkName] = useState("");
+  const [bulkPassword, setBulkPassword] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkResults, setBulkResults] = useState<
+    { admissionNo: string; ok: boolean; reason?: string; detail?: string }[] | null
+  >(null);
+
+  const bulkUnrecognized = useMemo(
+    () => bulkRows.filter((r) => !MARK_STATUS_OPTIONS.some((o) => o.toLowerCase() === r.status.toLowerCase())).length,
+    [bulkRows]
+  );
+
+  function handleBulkFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBulkFileName(file.name);
+    setBulkResults(null);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result ?? "");
+      const parsed = parseCsv(text)
+        .map((cols) => ({ admissionNo: (cols[0] ?? "").trim(), status: (cols[1] ?? "").trim() }))
+        .filter((r) => r.admissionNo !== "");
+      setBulkRows(parsed);
+    };
+    reader.readAsText(file);
+    e.target.value = ""; // allow re-selecting the same file after fixing it
+  }
+
+  function downloadBulkTemplate() {
+    downloadCsv(
+      "bulk-status-upload-template.csv",
+      toCsv(["Admission Number", "Status"], [["2023/12345", "Attachment"], ["2023/12346", "In Session"]])
+    );
+  }
+
+  function closeBulkModal() {
+    setBulkOpen(false);
+    setBulkFileName("");
+    setBulkRows([]);
+    setBulkOverride(false);
+    setBulkName("");
+    setBulkPassword("");
+    setBulkResults(null);
+  }
+
+  async function handleBulkSubmit() {
+    if (bulkRows.length === 0 || !bulkName.trim() || !bulkPassword.trim()) return;
+    setBulkBusy(true);
+    try {
+      const res = await fetch("/api/bulk-upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ termSlug: apiTermSlug, rows: bulkRows, override: bulkOverride, password: bulkPassword }),
+      });
+      const json = await res.json();
+      if (res.status === 401) {
+        alert("Wrong password — nothing was changed.");
+        return;
+      }
+      if (!json.ok) {
+        alert(`Couldn't upload: ${json.reason ?? "unknown error"}`);
+        return;
+      }
+      window.localStorage.setItem("icmhs-resolver-name", bulkName.trim());
+      setBulkResults(json.results);
+      const succeeded = json.results.filter((r: any) => r.ok).length;
+      if (succeeded > 0) await handleRefresh();
+    } finally {
+      setBulkBusy(false);
+    }
+  }
   const [unmarkedQuery, setUnmarkedQuery] = useState("");
   const [markingId, setMarkingId] = useState<string | null>(null);
   const [markSelections, setMarkSelections] = useState<Record<string, string>>({});
@@ -549,6 +627,11 @@ export default function Dashboard({
               style={styles.syncBtn}
             >
               {carryingForward ? "Carrying forward…" : "Carry forward Graduated/Dropped/Completed"}
+            </button>
+          )}
+          {isColumnTerm && (
+            <button onClick={() => { setBulkName(resolverName); setBulkOpen(true); }} style={styles.syncBtn}>
+              Bulk upload statuses
             </button>
           )}
           {isLive && (
@@ -1086,9 +1169,125 @@ export default function Dashboard({
           </div>
         </div>
       )}
+      {bulkOpen && (
+        <div style={modalStyles.overlay}>
+          <div style={{ ...modalStyles.box, width: 560 }}>
+            <h3 style={modalStyles.title}>Bulk upload statuses</h3>
+            {bulkResults ? (
+              <>
+                <p style={modalStyles.body}>
+                  {bulkResults.filter((r) => r.ok).length} of {bulkResults.length} updated for {termLabel}.
+                </p>
+                <div style={bulkTableWrap}>
+                  <table style={bulkTable}>
+                    <thead>
+                      <tr>
+                        <th style={bulkTh}>Admission No</th>
+                        <th style={bulkTh}>Result</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bulkResults.map((r, i) => (
+                        <tr key={r.admissionNo + i}>
+                          <td style={bulkTd}>{r.admissionNo}</td>
+                          <td style={{ ...bulkTd, color: r.ok ? C.sage : C.rose }}>
+                            {r.ok ? "Updated" : r.detail || r.reason}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={modalStyles.actions}>
+                  <button style={modalStyles.confirmBtn} onClick={closeBulkModal}>Done</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p style={modalStyles.body}>
+                  Upload a CSV with two columns — admission number and the status to set for {termLabel}.
+                  Recognized statuses: {MARK_STATUS_OPTIONS.join(", ")}.
+                </p>
+                <button onClick={downloadBulkTemplate} style={bulkTemplateBtn}>Download CSV template</button>
+                <label style={modalStyles.label}>CSV file</label>
+                <input type="file" accept=".csv" onChange={handleBulkFile} style={{ fontSize: 13 }} />
+                {bulkFileName && (
+                  <p style={{ fontSize: 12, color: C.slate, marginTop: 6 }}>
+                    {bulkRows.length} row{bulkRows.length === 1 ? "" : "s"} parsed from {bulkFileName}
+                    {bulkUnrecognized > 0 &&
+                      ` — ${bulkUnrecognized} row${bulkUnrecognized === 1 ? "" : "s"} have an unrecognized status and will be rejected.`}
+                  </p>
+                )}
+                {bulkRows.length > 0 && (
+                  <div style={{ ...bulkTableWrap, maxHeight: 180, margin: "10px 0" }}>
+                    <table style={bulkTable}>
+                      <thead>
+                        <tr>
+                          <th style={bulkTh}>Admission No</th>
+                          <th style={bulkTh}>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {bulkRows.slice(0, 200).map((r, i) => {
+                          const recognized = MARK_STATUS_OPTIONS.some((o) => o.toLowerCase() === r.status.toLowerCase());
+                          return (
+                            <tr key={r.admissionNo + i}>
+                              <td style={bulkTd}>{r.admissionNo}</td>
+                              <td style={{ ...bulkTd, color: recognized ? C.ink : C.rose }}>{r.status || "(blank)"}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    {bulkRows.length > 200 && (
+                      <div style={{ padding: 8, fontSize: 11, color: C.slate }}>…and {bulkRows.length - 200} more</div>
+                    )}
+                  </div>
+                )}
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: C.slate, marginTop: 10 }}>
+                  <input type="checkbox" checked={bulkOverride} onChange={(e) => setBulkOverride(e.target.checked)} />
+                  Override the terminal lock (allow changing a student who's already Graduated/Dropped elsewhere)
+                </label>
+                <label style={modalStyles.label}>Your name</label>
+                <input
+                  style={modalStyles.input}
+                  value={bulkName}
+                  onChange={(e) => setBulkName(e.target.value)}
+                  placeholder="e.g. Kennedy"
+                />
+                <label style={modalStyles.label}>Resolve password</label>
+                <input
+                  type="password"
+                  style={modalStyles.input}
+                  value={bulkPassword}
+                  onChange={(e) => setBulkPassword(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleBulkSubmit(); }}
+                  placeholder="••••••••"
+                />
+                <div style={modalStyles.actions}>
+                  <button style={modalStyles.cancelBtn} onClick={closeBulkModal}>Cancel</button>
+                  <button
+                    style={modalStyles.confirmBtn}
+                    disabled={bulkBusy || bulkRows.length === 0 || !bulkName.trim() || !bulkPassword.trim()}
+                    onClick={handleBulkSubmit}
+                  >
+                    {bulkBusy ? "Uploading…" : `Upload ${bulkRows.length} row${bulkRows.length === 1 ? "" : "s"}`}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+const bulkTableWrap: React.CSSProperties = { maxHeight: 240, overflowY: "auto", border: `1px solid ${C.line}`, borderRadius: 8, marginBottom: 16 };
+const bulkTable: React.CSSProperties = { width: "100%", fontSize: 12, borderCollapse: "collapse" };
+const bulkTh: React.CSSProperties = { textAlign: "left", padding: "6px 10px", borderBottom: `1px solid ${C.line}`, position: "sticky", top: 0, background: "#fff" };
+const bulkTd: React.CSSProperties = { padding: "5px 10px", borderBottom: `1px solid ${C.line}` };
+const bulkTemplateBtn: React.CSSProperties = { border: `1px solid ${C.line}`, background: "#fff", color: C.teal, borderRadius: 7, padding: "6px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", margin: "6px 0 14px" };
 
 const modalStyles: Record<string, React.CSSProperties> = {
   overlay: { position: "fixed", inset: 0, background: "rgba(18,42,40,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 },

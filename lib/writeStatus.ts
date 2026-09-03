@@ -348,3 +348,122 @@ export async function bulkCarryForwardStatuses(termSlug: string): Promise<CarryF
 
   return { ok: true, updated, alreadySet };
 }
+
+/**
+ * Sets many students' statuses at once from an uploaded list — for the
+ * "students who were In Session May-Aug and are now on Attachment" kind of
+ * case, where the set of students and their new status comes from outside
+ * the app (a registrar-curated list) rather than being derivable from a
+ * rule. Only valid for a "live-column" term. Unlike bulkCarryForwardStatuses,
+ * this DOES overwrite an existing value — that's the point, it's a
+ * deliberate reassignment — but it still respects the terminal lock
+ * (Graduated/Dropped elsewhere) unless override is set for the whole batch.
+ * One row's problem (unknown admission number, bad status, locked student)
+ * never blocks the rest of the file — every row gets its own result.
+ */
+export type BulkUploadOutcome =
+  | { admissionNo: string; ok: true }
+  | { admissionNo: string; ok: false; reason: "not-found" | "invalid-status" | "terminal-lock" | "duplicate"; detail?: string };
+
+export async function bulkUploadStatuses(
+  termSlug: string,
+  rows: { admissionNo: string; status: string }[],
+  override: boolean
+): Promise<{ ok: true; results: BulkUploadOutcome[] } | { ok: false; reason: "unsupported-term" }> {
+  const term = getTerm(termSlug);
+  if (!term || term.source.kind !== "live-column") return { ok: false, reason: "unsupported-term" };
+
+  const col = term.source.column;
+  const [mainRows, nakuruRows, logRows] = await Promise.all([
+    fetchSheetRows(`MAIN CAMPUS!A:${col}`),
+    fetchSheetRows(`NAKURU CAMPUS!A:${col}`),
+    override ? Promise.resolve([]) : fetchSheetRows("STATUS LOG!A:D").catch(() => []),
+  ]);
+
+  const byAdmission = new Map<
+    string,
+    { tab: "MAIN CAMPUS" | "NAKURU CAMPUS"; campus: "MAIN" | "NAKURU"; row: number; rawRow: any[] }
+  >();
+  for (const [tab, campus, rowsArr] of [
+    ["MAIN CAMPUS", "MAIN", mainRows],
+    ["NAKURU CAMPUS", "NAKURU", nakuruRows],
+  ] as const) {
+    for (let i = 2; i < rowsArr.length; i++) {
+      const r = rowsArr[i];
+      if (r && r[1] != null && String(r[1]).trim() !== "") {
+        byAdmission.set(String(r[1]).trim(), { tab, campus, row: i + 1, rawRow: r });
+      }
+    }
+  }
+
+  // One-time STATUS LOG read (skipped entirely when overriding), instead of
+  // findTerminalBlock's per-student fetch — this file could be hundreds of rows.
+  const logByAdmission = new Map<string, Map<string, string>>();
+  for (let i = 1; i < logRows.length; i++) {
+    const [admissionNo, logTerm, status] = logRows[i] ?? [];
+    if (!admissionNo) continue;
+    const key = String(admissionNo);
+    if (!logByAdmission.has(key)) logByAdmission.set(key, new Map());
+    logByAdmission.get(key)!.set(String(logTerm), String(status));
+  }
+
+  function terminalBlockFor(loc: { rawRow: any[]; campus: "MAIN" | "NAKURU" }, admissionNo: string) {
+    for (const t of TERMS) {
+      if (t.source.kind !== "live-legacy") continue;
+      const flags = readFlagsAt(loc.rawRow, loc.campus, t.source.block);
+      const r = reconcile(flags);
+      if (r.canonicalStatus !== "UNMARKED" && TERMINAL_STATUSES.includes(r.canonicalStatus)) {
+        return { term: t.label, status: STATUS_LABEL[r.canonicalStatus] };
+      }
+    }
+    for (const [logTerm, status] of logByAdmission.get(admissionNo) ?? []) {
+      const key = LABEL_TO_FLAG[status.trim()];
+      if (key && TERMINAL_STATUSES.includes(key)) return { term: logTerm, status };
+    }
+    return null;
+  }
+
+  const results: BulkUploadOutcome[] = [];
+  const updates: { range: string; values: any[] }[] = [];
+  const seen = new Set<string>();
+
+  for (const { admissionNo, status } of rows) {
+    const adm = admissionNo.trim();
+    const val = status.trim();
+    if (!adm) continue;
+
+    if (seen.has(adm)) {
+      results.push({ admissionNo: adm, ok: false, reason: "duplicate", detail: "duplicate row in file — only the first was applied" });
+      continue;
+    }
+    seen.add(adm);
+
+    if (!LABEL_TO_FLAG[val]) {
+      results.push({ admissionNo: adm, ok: false, reason: "invalid-status", detail: `"${val}" isn't a recognized status` });
+      continue;
+    }
+
+    const loc = byAdmission.get(adm);
+    if (!loc) {
+      results.push({ admissionNo: adm, ok: false, reason: "not-found" });
+      continue;
+    }
+
+    if (!override) {
+      const blocked = terminalBlockFor(loc, adm);
+      if (blocked) {
+        results.push({ admissionNo: adm, ok: false, reason: "terminal-lock", detail: `${blocked.status} in ${blocked.term}` });
+        continue;
+      }
+    }
+
+    updates.push({ range: `${loc.tab}!${col}${loc.row}`, values: [val] });
+    results.push({ admissionNo: adm, ok: true });
+  }
+
+  if (updates.length > 0) {
+    await batchUpdateRanges(updates);
+  }
+
+  return { ok: true, results };
+}

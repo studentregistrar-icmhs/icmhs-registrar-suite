@@ -43,6 +43,7 @@ export default async function TermPage({ params }: { params: { term: string } })
       termLabel={term.label}
       isLive={data.isLive}
       canCarryForward={term.source.kind === "live-column" && !!previousTerm}
+      isColumnTerm={term.source.kind === "live-column"}
       apiTermSlug={params.term}
       previousTermLabel={previousTerm?.label}
       previousData={previousData && !previousData.error ? previousData.dashboard : null}
