@@ -1,30 +1,50 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+const AUTO_REFRESH_MS = 30 * 1000; // this list needs to feel closer to instant than the term dashboards do
 
 export default function Dashboard() {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [filter, setFilter] = useState("all");
   const [openId, setOpenId] = useState(null);
+  const [lastLoadedAt, setLastLoadedAt] = useState(null);
+  const loadingRef = useRef(false); // guards against overlapping fetches if one is slow
 
   useEffect(() => {
     load();
   }, []);
 
-  async function load() {
-    setLoading(true);
+  // Auto-refresh so a request submitted while this page is sitting open
+  // shows up on its own, not only after someone thinks to reload the tab.
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") load({ background: true });
+    }, AUTO_REFRESH_MS);
+    return () => clearInterval(id);
+  }, []);
+
+  async function load({ background = false } = {}) {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+    if (background) setRefreshing(true);
+    else setLoading(true);
     setLoadError("");
     try {
-      const res = await fetch("/api/deferments/requests");
+      const res = await fetch("/api/deferments/requests", { cache: "no-store" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Could not load requests.");
       setRequests(data.requests);
+      setLastLoadedAt(new Date());
     } catch (err) {
       setLoadError(err.message);
     } finally {
+      loadingRef.current = false;
       setLoading(false);
+      setRefreshing(false);
     }
   }
 
@@ -53,10 +73,19 @@ export default function Dashboard() {
             </button>
           ))}
         </div>
-        <button className="export-btn" type="button" onClick={exportPdf}>
-          Export {filter === "all" ? "All" : filter.charAt(0).toUpperCase() + filter.slice(1)} (Excel)
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span className="refresh-status">
+            {refreshing ? "Refreshing…" : lastLoadedAt ? `Updated ${lastLoadedAt.toLocaleTimeString()}` : ""}
+          </span>
+          <button className="export-btn" type="button" onClick={() => load()} disabled={refreshing}>
+            Refresh
+          </button>
+          <button className="export-btn" type="button" onClick={exportPdf}>
+            Export {filter === "all" ? "All" : filter.charAt(0).toUpperCase() + filter.slice(1)} (Excel)
+          </button>
+        </div>
       </div>
+
 
       {filtered.length === 0 ? (
         <div className="empty">No requests here yet.</div>

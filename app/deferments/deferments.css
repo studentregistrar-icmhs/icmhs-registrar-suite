@@ -74,6 +74,8 @@ button.primary:disabled{opacity:0.5;cursor:not-allowed;}
   padding:8px 14px;border-radius:5px;border:1px solid var(--navy);background:#fff;color:var(--navy);cursor:pointer;
 }
 .export-btn:hover{background:var(--bg);}
+.export-btn:disabled{opacity:0.5;cursor:not-allowed;}
+.refresh-status{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:0.03em;opacity:0.55;white-space:nowrap;}
 .chip{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:0.05em;text-transform:uppercase;padding:7px 14px;border:1px solid var(--line);border-radius:20px;background:#fff;cursor:pointer;opacity:0.7;}
 .chip.active{background:var(--navy);color:#fff;border-color:var(--navy);opacity:1;}
 
