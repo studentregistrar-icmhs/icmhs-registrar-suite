@@ -1398,6 +1398,23 @@ function StudentListPanel({
   onQueryChange: (q: string) => void;
   onClose: () => void;
 }) {
+  const [deptFilter, setDeptFilter] = useState<string | null>(null);
+  useEffect(() => { setDeptFilter(null); }, [status]);
+
+  const byDept = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const s of students) {
+      const d = getDepartment(s.courseCode);
+      counts.set(d, (counts.get(d) ?? 0) + 1);
+    }
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+  }, [students]);
+
+  const displayedStudents = useMemo(
+    () => (deptFilter ? students.filter((s) => getDepartment(s.courseCode) === deptFilter) : students),
+    [students, deptFilter]
+  );
+
   return (
     <div style={panelStyles.overlay} onClick={onClose}>
       <div style={panelStyles.panel} onClick={(e) => e.stopPropagation()}>
@@ -1415,17 +1432,45 @@ function StudentListPanel({
           style={panelStyles.search}
           autoFocus
         />
+        {byDept.length > 1 && (
+          <div style={panelStyles.deptBreakdown}>
+            <div style={panelStyles.deptBreakdownTitle}>
+              Breakdown by School/Department {deptFilter && <button style={panelStyles.deptClear} onClick={() => setDeptFilter(null)}>clear filter ✕</button>}
+            </div>
+            {byDept.map(([dept, count]) => {
+              const pct = students.length ? Math.round((count / students.length) * 100) : 0;
+              const active = deptFilter === dept;
+              return (
+                <div
+                  key={dept}
+                  onClick={() => setDeptFilter(active ? null : dept)}
+                  style={{ ...panelStyles.deptRow, opacity: deptFilter && !active ? 0.45 : 1 }}
+                  title="Click to filter the list below to this School/Department"
+                >
+                  <div style={{ ...panelStyles.deptLabel, fontWeight: active ? 700 : 500 }}>{dept}</div>
+                  <div style={panelStyles.deptBarTrack}>
+                    <div style={{ ...panelStyles.deptBarFill, width: `${pct}%`, background: active ? C.rose : C.teal }} />
+                  </div>
+                  <div style={panelStyles.deptFigures}>{count} · {pct}%</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-          <div style={panelStyles.count}>{fmt(students.length)} student{students.length === 1 ? "" : "s"}</div>
-          {students.length > 0 && (
+          <div style={panelStyles.count}>
+            {fmt(displayedStudents.length)} student{displayedStudents.length === 1 ? "" : "s"}
+            {deptFilter ? ` in ${deptFilter}` : ""}
+          </div>
+          {displayedStudents.length > 0 && (
             <button
               style={panelStyles.exportBtn}
               onClick={() =>
                 downloadCsv(
-                  `${status.replace(/\s+/g, "-")}-students.csv`,
+                  `${status.replace(/\s+/g, "-")}${deptFilter ? "-" + deptFilter.replace(/\s+/g, "-") : ""}-students.csv`,
                   toCsv(
-                    ["Admission No.", "Name", "Programme", "Campus", "Contacts"],
-                    students.map((s) => [s.admissionNo, s.name, s.courseName || s.courseCode, s.campus, s.contacts])
+                    ["Admission No.", "Name", "Programme", "School/Department", "Campus", "Contacts"],
+                    displayedStudents.map((s) => [s.admissionNo, s.name, s.courseName || s.courseCode, getDepartment(s.courseCode), s.campus, s.contacts])
                   )
                 )
               }
@@ -1446,7 +1491,7 @@ function StudentListPanel({
               </tr>
             </thead>
             <tbody>
-              {students.map((s, i) => (
+              {displayedStudents.map((s, i) => (
                 <tr key={s.admissionNo + i} style={i % 2 ? panelStyles.trOdd : undefined}>
                   <td style={panelStyles.tdCode}>
                     <Link href={`/students/${encodeURIComponent(s.admissionNo)}`} style={{ color: C.teal }}>
@@ -1459,7 +1504,7 @@ function StudentListPanel({
                   <td style={panelStyles.tdName}>{s.contacts || "—"}</td>
                 </tr>
               ))}
-              {students.length === 0 && (
+              {displayedStudents.length === 0 && (
                 <tr>
                   <td colSpan={5} style={{ padding: "20px", textAlign: "center", color: C.slate }}>
                     No matching students.
@@ -1484,6 +1529,14 @@ const panelStyles: Record<string, React.CSSProperties> = {
   exportBtn: { border: `1px solid ${C.line}`, background: "#fff", color: C.ink, padding: "5px 10px", borderRadius: 6, fontSize: 11.5, fontWeight: 600, cursor: "pointer" },
   search: { border: `1px solid ${C.line}`, borderRadius: 6, padding: "9px 12px", fontSize: 13, width: "100%", boxSizing: "border-box", outline: "none", marginBottom: 10 },
   count: { fontSize: 12, color: C.slate, fontFamily: "IBM Plex Mono, monospace", marginBottom: 10 },
+  deptBreakdown: { border: `1px solid ${C.line}`, borderRadius: 8, padding: "10px 12px", marginBottom: 14, background: "#F5F7F2" },
+  deptBreakdownTitle: { fontFamily: "IBM Plex Mono, monospace", fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.04em", color: C.slate, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" },
+  deptClear: { border: "none", background: "transparent", color: C.teal, fontSize: 10.5, cursor: "pointer", fontFamily: "IBM Plex Mono, monospace", padding: 0, textTransform: "none", letterSpacing: 0 },
+  deptRow: { display: "grid", gridTemplateColumns: "1fr 90px 70px", alignItems: "center", gap: 8, padding: "3px 0", cursor: "pointer" },
+  deptLabel: { fontSize: 11.5, color: C.ink },
+  deptBarTrack: { background: "#fff", borderRadius: 4, height: 10, overflow: "hidden", border: `1px solid ${C.line}` },
+  deptBarFill: { height: "100%", borderRadius: 4 },
+  deptFigures: { fontSize: 11, fontFamily: "IBM Plex Mono, monospace", color: C.slate, textAlign: "right" },
   listWrap: { overflowY: "auto", flex: 1 },
   table: { width: "100%", borderCollapse: "collapse", fontSize: 13 },
   th: { fontFamily: "IBM Plex Mono, monospace", fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.04em", padding: "6px 8px", borderBottom: `2px solid ${C.ink}`, position: "sticky", top: 0, background: "#fff" },
