@@ -1196,7 +1196,7 @@ export default function Dashboard({
                               onChange={(e) =>
                                 setMarkValidity((prev) => ({ ...prev, [s.admissionNo]: e.target.value }))
                               }
-                              title="Lecture card validity date"
+                              title="Lecture card validity date — today's date is auto-recorded alongside it as the date reported"
                             />
                           )}
                           <button
@@ -1230,7 +1230,9 @@ export default function Dashboard({
             for this term yet. Pick a status and hit "Set" to write it directly to the live sheet —
             one click, no confirmation needed — or select several with the checkboxes and use
             "Set selected" above to do them all at once. Choosing "In Session" asks for a lecture
-            card validity date too, written to the column right next to status. Or mark the correct
+            card validity date too, written to the column right next to status — today's date is
+            then auto-recorded as "date reported" in the column right after that, with no extra
+            input needed, so there's always a record of when the entry was made. Or mark the correct
             status at the source and it'll clear on next refresh either way.
           </div>
         </section>

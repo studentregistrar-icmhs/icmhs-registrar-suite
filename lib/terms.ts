@@ -6,7 +6,7 @@
 export type TermSource =
   | { kind: "live-legacy"; block: "flagsJanApr" | "flagsMayAug" }
   | { kind: "live-statuslog"; termLabel: string } // matches the "Term" column in the STATUS LOG tab
-  | { kind: "live-column"; column: string; validityColumn?: string } // single status column (e.g. "AA") on MAIN CAMPUS / NAKURU CAMPUS; validityColumn is an optional adjacent column for a validity date, only ever written when status is "In Session"
+  | { kind: "live-column"; column: string; validityColumn?: string; dateReportedColumn?: string } // single status column (e.g. "AA") on MAIN CAMPUS / NAKURU CAMPUS; validityColumn is an optional adjacent column for a validity date, only ever written when status is "In Session"; dateReportedColumn is an optional column (immediately after validityColumn) that's auto-stamped with today's date whenever validityColumn is written, for an accountability trail of when the entry was made — never user-entered
   | { kind: "static"; file: string }; // path under /data/historical/
 
 export type TermConfig = {
@@ -37,7 +37,10 @@ export const TERMS: TermConfig[] = [
     // Jan-Apr/May-Aug flag columns, just one column instead of eight.
     // validityColumn (AB) holds a lecture-card validity date, but only for
     // students marked "In Session" — see writeStatus.ts's IN_SESSION_LABEL.
-    source: { kind: "live-column", column: "AA", validityColumn: "AB" },
+    // dateReportedColumn (AC) is auto-stamped with today's date the moment
+    // AB is written, so the registrar can always see when that entry was
+    // made — this is never a value the user types in themselves.
+    source: { kind: "live-column", column: "AA", validityColumn: "AB", dateReportedColumn: "AC" },
   },
   // Previous years land here once their Excel files are parsed, e.g.:
   // {

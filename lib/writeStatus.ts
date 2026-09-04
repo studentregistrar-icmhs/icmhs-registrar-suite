@@ -12,13 +12,26 @@ import { loadTermData } from "./loadTermData";
 // so if that label is ever renamed this stays correct automatically.
 const IN_SESSION_LABEL = STATUS_LABEL.reported;
 
-/** Writes a validity date into a live-column term's validityColumn for one student, if that term has one configured. No-op otherwise (including for every other term kind) — safe to call unconditionally. */
+/**
+ * Writes a validity date into a live-column term's validityColumn for one
+ * student, if that term has one configured. No-op otherwise (including for
+ * every other term kind) — safe to call unconditionally. Alongside it, if
+ * the term also has a dateReportedColumn configured, stamps that column
+ * with today's date (server-side, never user-entered) — an automatic
+ * "date reported" record of when this validity entry was made, for
+ * accountability.
+ */
 async function writeValidityDate(term: ReturnType<typeof getTerm>, admissionNo: string, validityDate: string): Promise<void> {
   if (!term || term.source.kind !== "live-column" || !term.source.validityColumn) return;
   const loc = await findStudentRow(admissionNo);
   if (!loc) return;
   const tabName = loc.campus === "MAIN" ? "MAIN CAMPUS" : "NAKURU CAMPUS";
-  await updateRange(`${tabName}!${term.source.validityColumn}${loc.sheetRowNumber}`, [validityDate]);
+  const updates = [{ range: `${tabName}!${term.source.validityColumn}${loc.sheetRowNumber}`, values: [validityDate] }];
+  if (term.source.dateReportedColumn) {
+    const dateReported = new Date().toISOString().slice(0, 10);
+    updates.push({ range: `${tabName}!${term.source.dateReportedColumn}${loc.sheetRowNumber}`, values: [dateReported] });
+  }
+  await batchUpdateRanges(updates);
 }
 
 export type WriteResult =
@@ -445,6 +458,10 @@ export async function bulkUploadStatuses(
   const results: BulkUploadOutcome[] = [];
   const updates: { range: string; values: any[] }[] = [];
   const seen = new Set<string>();
+  // Today's date, stamped into dateReportedColumn for every "In Session"
+  // row in this batch — captures the day the data was entered, not
+  // anything the registrar types in, for accountability.
+  const dateReported = new Date().toISOString().slice(0, 10);
 
   for (const { admissionNo, status } of rows) {
     const adm = admissionNo.trim();
@@ -479,6 +496,9 @@ export async function bulkUploadStatuses(
     updates.push({ range: `${loc.tab}!${col}${loc.row}`, values: [val] });
     if (val === IN_SESSION_LABEL && validityDate && term.source.validityColumn) {
       updates.push({ range: `${loc.tab}!${term.source.validityColumn}${loc.row}`, values: [validityDate] });
+      if (term.source.dateReportedColumn) {
+        updates.push({ range: `${loc.tab}!${term.source.dateReportedColumn}${loc.row}`, values: [dateReported] });
+      }
     }
     results.push({ admissionNo: adm, ok: true });
   }
