@@ -18,6 +18,7 @@ export default async function Home() {
       <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
         <Link href="/students" style={styles.studentSearchLink}>🔍 Find a student</Link>
         <Link href="/deferments/admin" style={styles.studentSearchLink}>📄 Deferment Registrar Review</Link>
+        <Link href="/reports" style={styles.studentSearchLink}>📊 Reports</Link>
       </div>
       <div style={styles.grid}>
         {results.map(({ term: t, data }) => {
