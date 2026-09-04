@@ -445,18 +445,23 @@ export default function Dashboard({
     }
   }
 
-  async function handleMarkUnmarked(admissionNo: string, status: string, markedBy: string) {
+  async function handleMarkUnmarked(admissionNo: string, status: string, markedBy: string, validityDate?: string) {
     setMarkingId(admissionNo);
     try {
       const res = await fetch("/api/unmarked/mark", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ admissionNo, termSlug: apiTermSlug, status, markedBy }),
+        body: JSON.stringify({ admissionNo, termSlug: apiTermSlug, status, markedBy, validityDate }),
       });
       const json = await res.json();
       if (json.ok) {
         window.localStorage.setItem("icmhs-resolver-name", markedBy);
         setMarkSelections((prev) => {
+          const next = { ...prev };
+          delete next[admissionNo];
+          return next;
+        });
+        setMarkValidity((prev) => {
           const next = { ...prev };
           delete next[admissionNo];
           return next;
@@ -474,11 +479,13 @@ export default function Dashboard({
     }
   }
 
+  const [markValidity, setMarkValidity] = useState<Record<string, string>>({});
   const [selectedUnmarked, setSelectedUnmarked] = useState<Set<string>>(new Set());
   const [bulkMarkStatus, setBulkMarkStatus] = useState("");
+  const [bulkMarkValidity, setBulkMarkValidity] = useState("");
   const [bulkMarkBusy, setBulkMarkBusy] = useState(false);
 
-  async function handleBulkMarkUnmarked(status: string, markedBy: string) {
+  async function handleBulkMarkUnmarked(status: string, markedBy: string, validityDate?: string) {
     const admissionNos = Array.from(selectedUnmarked);
     if (admissionNos.length === 0) return;
     setBulkMarkBusy(true);
@@ -486,7 +493,7 @@ export default function Dashboard({
       const res = await fetch("/api/unmarked/mark-bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ termSlug: apiTermSlug, admissionNos, status, markedBy }),
+        body: JSON.stringify({ termSlug: apiTermSlug, admissionNos, status, markedBy, validityDate }),
       });
       const json = await res.json();
       if (!json.ok) {
@@ -498,6 +505,7 @@ export default function Dashboard({
       const failed = json.results.filter((r: any) => !r.ok);
       setSelectedUnmarked(new Set());
       setBulkMarkStatus("");
+      setBulkMarkValidity("");
       if (failed.length === 0) {
         alert(`Set ${succeeded.length} student(s) to "${status}".`);
       } else {
@@ -1059,22 +1067,37 @@ export default function Dashboard({
                 style={styles.markSelect}
                 value={bulkMarkStatus}
                 disabled={selectedUnmarked.size === 0 || bulkMarkBusy}
-                onChange={(e) => setBulkMarkStatus(e.target.value)}
+                onChange={(e) => { setBulkMarkStatus(e.target.value); if (e.target.value !== "In Session") setBulkMarkValidity(""); }}
               >
                 <option value="" disabled>Set selected to…</option>
                 {MARK_STATUS_OPTIONS.map((opt) => (
                   <option key={opt} value={opt}>{opt}</option>
                 ))}
               </select>
+              {bulkMarkStatus === "In Session" && (
+                <input
+                  type="date"
+                  style={styles.markSelect}
+                  value={bulkMarkValidity}
+                  disabled={bulkMarkBusy}
+                  onChange={(e) => setBulkMarkValidity(e.target.value)}
+                  title="Lecture card validity date"
+                />
+              )}
               <button
                 style={styles.resolveBtn}
-                disabled={selectedUnmarked.size === 0 || !bulkMarkStatus || bulkMarkBusy}
-                onClick={() => handleBulkMarkUnmarked(bulkMarkStatus, resolverName.trim() || "Unknown")}
+                disabled={
+                  selectedUnmarked.size === 0 ||
+                  !bulkMarkStatus ||
+                  (bulkMarkStatus === "In Session" && !bulkMarkValidity) ||
+                  bulkMarkBusy
+                }
+                onClick={() => handleBulkMarkUnmarked(bulkMarkStatus, resolverName.trim() || "Unknown", bulkMarkValidity || undefined)}
               >
                 {bulkMarkBusy ? "Setting…" : `Set ${selectedUnmarked.size || ""} selected`}
               </button>
               {selectedUnmarked.size > 0 && (
-                <button style={styles.clearFilterBtn} onClick={() => setSelectedUnmarked(new Set())}>
+                <button style={styles.clearFilterBtn} onClick={() => { setSelectedUnmarked(new Set()); setBulkMarkStatus(""); setBulkMarkValidity(""); }}>
                   Clear selection
                 </button>
               )}
@@ -1143,9 +1166,17 @@ export default function Dashboard({
                             style={styles.markSelect}
                             value={markSelections[s.admissionNo] ?? ""}
                             disabled={markingId === s.admissionNo}
-                            onChange={(e) =>
-                              setMarkSelections((prev) => ({ ...prev, [s.admissionNo]: e.target.value }))
-                            }
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setMarkSelections((prev) => ({ ...prev, [s.admissionNo]: val }));
+                              if (val !== "In Session") {
+                                setMarkValidity((prev) => {
+                                  const next = { ...prev };
+                                  delete next[s.admissionNo];
+                                  return next;
+                                });
+                              }
+                            }}
                           >
                             <option value="" disabled>
                               Set status…
@@ -1156,11 +1187,32 @@ export default function Dashboard({
                               </option>
                             ))}
                           </select>
+                          {markSelections[s.admissionNo] === "In Session" && (
+                            <input
+                              type="date"
+                              style={styles.markSelect}
+                              value={markValidity[s.admissionNo] ?? ""}
+                              disabled={markingId === s.admissionNo}
+                              onChange={(e) =>
+                                setMarkValidity((prev) => ({ ...prev, [s.admissionNo]: e.target.value }))
+                              }
+                              title="Lecture card validity date"
+                            />
+                          )}
                           <button
                             style={styles.resolveBtn}
-                            disabled={!markSelections[s.admissionNo] || markingId === s.admissionNo}
+                            disabled={
+                              !markSelections[s.admissionNo] ||
+                              (markSelections[s.admissionNo] === "In Session" && !markValidity[s.admissionNo]) ||
+                              markingId === s.admissionNo
+                            }
                             onClick={() =>
-                              handleMarkUnmarked(s.admissionNo, markSelections[s.admissionNo], resolverName.trim() || "Unknown")
+                              handleMarkUnmarked(
+                                s.admissionNo,
+                                markSelections[s.admissionNo],
+                                resolverName.trim() || "Unknown",
+                                markValidity[s.admissionNo]
+                              )
                             }
                           >
                             {markingId === s.admissionNo ? "Setting…" : "Set"}
@@ -1177,8 +1229,9 @@ export default function Dashboard({
             Likely cause: the student's row exists but none of the 8 status columns were filled in
             for this term yet. Pick a status and hit "Set" to write it directly to the live sheet —
             one click, no confirmation needed — or select several with the checkboxes and use
-            "Set selected" above to do them all at once. Or mark the correct status at the source
-            and it'll clear on next refresh either way.
+            "Set selected" above to do them all at once. Choosing "In Session" asks for a lecture
+            card validity date too, written to the column right next to status. Or mark the correct
+            status at the source and it'll clear on next refresh either way.
           </div>
         </section>
         </>

@@ -6,11 +6,12 @@ import { markUnmarkedStudent } from "@/lib/writeStatus";
 // protected by middleware.ts (Basic Auth) like every other registrar route,
 // and every write is still logged to RESOLVE LOG with who did it.
 export async function POST(req: NextRequest) {
-  const { admissionNo, termSlug, status, markedBy } = (await req.json()) as {
+  const { admissionNo, termSlug, status, markedBy, validityDate } = (await req.json()) as {
     admissionNo: string;
     termSlug: string;
     status?: string;
     markedBy?: string;
+    validityDate?: string;
   };
 
   if (!admissionNo || !termSlug || !status) {
@@ -18,7 +19,7 @@ export async function POST(req: NextRequest) {
   }
 
   const name = (markedBy || "").trim() || "Unknown";
-  const result = await markUnmarkedStudent(admissionNo, termSlug, status, name);
+  const result = await markUnmarkedStudent(admissionNo, termSlug, status, name, validityDate?.trim() || undefined);
 
   if (result.ok) {
     revalidatePath(`/terms/${termSlug}`);

@@ -7,6 +7,20 @@ import { inheritedTerminalFlags } from "./statusLog";
 import { columnIndex } from "./columns";
 import { loadTermData } from "./loadTermData";
 
+// The one status the validity-date field applies to — see lib/terms.ts's
+// validityColumn. Read off STATUS_LABEL rather than hardcoding the string,
+// so if that label is ever renamed this stays correct automatically.
+const IN_SESSION_LABEL = STATUS_LABEL.reported;
+
+/** Writes a validity date into a live-column term's validityColumn for one student, if that term has one configured. No-op otherwise (including for every other term kind) — safe to call unconditionally. */
+async function writeValidityDate(term: ReturnType<typeof getTerm>, admissionNo: string, validityDate: string): Promise<void> {
+  if (!term || term.source.kind !== "live-column" || !term.source.validityColumn) return;
+  const loc = await findStudentRow(admissionNo);
+  if (!loc) return;
+  const tabName = loc.campus === "MAIN" ? "MAIN CAMPUS" : "NAKURU CAMPUS";
+  await updateRange(`${tabName}!${term.source.validityColumn}${loc.sheetRowNumber}`, [validityDate]);
+}
+
 export type WriteResult =
   | { ok: true }
   | { ok: false; reason: "terminal-lock"; blockingTerm: string; blockingStatus: string }
@@ -231,7 +245,8 @@ export async function markUnmarkedStudent(
   admissionNo: string,
   termSlug: string,
   newStatusLabel: string,
-  markedBy: string
+  markedBy: string,
+  validityDate?: string
 ): Promise<WriteResult> {
   const term = getTerm(termSlug);
   if (!term) return { ok: false, reason: "unsupported-term" };
@@ -252,6 +267,9 @@ export async function markUnmarkedStudent(
   const writeResult = await updateStudentStatus({ admissionNo, termSlug, newStatusLabel });
 
   if (writeResult.ok) {
+    if (newStatusLabel === IN_SESSION_LABEL && validityDate) {
+      await writeValidityDate(term, admissionNo, validityDate);
+    }
     await appendRow("RESOLVE LOG", [
       new Date().toISOString(),
       admissionNo,
@@ -368,7 +386,8 @@ export type BulkUploadOutcome =
 export async function bulkUploadStatuses(
   termSlug: string,
   rows: { admissionNo: string; status: string }[],
-  override: boolean
+  override: boolean,
+  validityDate?: string
 ): Promise<{ ok: true; results: BulkUploadOutcome[] } | { ok: false; reason: "unsupported-term" }> {
   const term = getTerm(termSlug);
   if (!term || term.source.kind !== "live-column") return { ok: false, reason: "unsupported-term" };
@@ -458,6 +477,9 @@ export async function bulkUploadStatuses(
     }
 
     updates.push({ range: `${loc.tab}!${col}${loc.row}`, values: [val] });
+    if (val === IN_SESSION_LABEL && validityDate && term.source.validityColumn) {
+      updates.push({ range: `${loc.tab}!${term.source.validityColumn}${loc.row}`, values: [validityDate] });
+    }
     results.push({ admissionNo: adm, ok: true });
   }
 
@@ -484,7 +506,8 @@ export async function bulkMarkUnmarked(
   termSlug: string,
   admissionNos: string[],
   status: string,
-  markedBy: string
+  markedBy: string,
+  validityDate?: string
 ): Promise<{ ok: true; results: BulkMarkOutcome[] } | { ok: false; reason: string }> {
   const term = getTerm(termSlug);
   if (!term) return { ok: false, reason: "unsupported-term" };
@@ -492,12 +515,12 @@ export async function bulkMarkUnmarked(
 
   if (term.source.kind === "live-column") {
     const rows = admissionNos.map((admissionNo) => ({ admissionNo, status }));
-    return bulkUploadStatuses(termSlug, rows, false);
+    return bulkUploadStatuses(termSlug, rows, false, validityDate);
   }
 
   const results: BulkMarkOutcome[] = [];
   for (const admissionNo of admissionNos) {
-    const r = await markUnmarkedStudent(admissionNo, termSlug, status, markedBy);
+    const r = await markUnmarkedStudent(admissionNo, termSlug, status, markedBy, validityDate);
     results.push(
       r.ok
         ? { admissionNo, ok: true }

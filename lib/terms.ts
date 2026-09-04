@@ -6,7 +6,7 @@
 export type TermSource =
   | { kind: "live-legacy"; block: "flagsJanApr" | "flagsMayAug" }
   | { kind: "live-statuslog"; termLabel: string } // matches the "Term" column in the STATUS LOG tab
-  | { kind: "live-column"; column: string } // single status column (e.g. "AA") on MAIN CAMPUS / NAKURU CAMPUS
+  | { kind: "live-column"; column: string; validityColumn?: string } // single status column (e.g. "AA") on MAIN CAMPUS / NAKURU CAMPUS; validityColumn is an optional adjacent column for a validity date, only ever written when status is "In Session"
   | { kind: "static"; file: string }; // path under /data/historical/
 
 export type TermConfig = {
@@ -35,7 +35,9 @@ export const TERMS: TermConfig[] = [
     // favour of a single "SEPT-DEC 2026 STATUS" column (column AA) added
     // directly to the MAIN CAMPUS and NAKURU CAMPUS tabs — same idea as the
     // Jan-Apr/May-Aug flag columns, just one column instead of eight.
-    source: { kind: "live-column", column: "AA" },
+    // validityColumn (AB) holds a lecture-card validity date, but only for
+    // students marked "In Session" — see writeStatus.ts's IN_SESSION_LABEL.
+    source: { kind: "live-column", column: "AA", validityColumn: "AB" },
   },
   // Previous years land here once their Excel files are parsed, e.g.:
   // {
