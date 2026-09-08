@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { TERMS } from "@/lib/terms";
+import { TERMS, getCurrentTermSlug } from "@/lib/terms";
 import { loadTermData } from "@/lib/loadTermData";
 import TermStatusPie from "@/components/TermStatusPie";
 
 export const revalidate = Number(process.env.REVALIDATE_SECONDS ?? 120);
 
 export default async function Home() {
+  const currentTermSlug = getCurrentTermSlug();
   const results = await Promise.all(
     TERMS.map(async (t) => ({ term: t, data: await loadTermData(t.slug) }))
   );
@@ -28,7 +29,7 @@ export default async function Home() {
               <div style={styles.cardLabel}>{t.label}</div>
               <div style={styles.cardMeta}>
                 {t.source.kind === "static" ? "Static snapshot" : "Live"}
-                {t.isDefault ? " · current" : ""}
+                {t.slug === currentTermSlug ? " · current" : ""}
               </div>
               {ready ? (
                 <TermStatusPie statusCounts={data!.dashboard.statusCounts.all} />

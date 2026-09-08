@@ -13,7 +13,6 @@ export type TermConfig = {
   slug: string;
   label: string;
   source: TermSource;
-  isDefault?: boolean;
 };
 
 export const TERMS: TermConfig[] = [
@@ -26,7 +25,6 @@ export const TERMS: TermConfig[] = [
     slug: "may-aug-2026",
     label: "May – Aug 2026",
     source: { kind: "live-legacy", block: "flagsMayAug" },
-    isDefault: true,
   },
   {
     slug: "sept-dec-2026",
@@ -63,8 +61,32 @@ export function getPreviousTerm(slug: string): TermConfig | undefined {
   return TERMS[i - 1];
 }
 
+/**
+ * The term slug that "now" falls into, based on the calendar month —
+ * Jan-Apr / May-Aug / Sept-Dec trimesters, whatever the current year is.
+ * This is computed from the clock rather than hardcoded so the "current"
+ * semester rolls over on its own each January/May/September instead of
+ * requiring a code change every time a new term starts.
+ *
+ * Falls back to the most recently defined live (non-static) term if no
+ * term has been configured yet for the exact current year/period (e.g.
+ * the calendar has rolled into a new trimester or year before that term's
+ * config was added to TERMS) — never throws, always returns something.
+ */
+export function getCurrentTermSlug(referenceDate: Date = new Date()): string {
+  const year = referenceDate.getFullYear();
+  const month = referenceDate.getMonth() + 1; // 1-12
+  const prefix = month <= 4 ? "jan-apr" : month <= 8 ? "may-aug" : "sept-dec";
+  const slug = `${prefix}-${year}`;
+  if (TERMS.some((t) => t.slug === slug)) return slug;
+
+  const liveTerms = TERMS.filter((t) => t.source.kind !== "static");
+  return (liveTerms[liveTerms.length - 1] ?? TERMS[TERMS.length - 1]).slug;
+}
+
 export function getDefaultTerm(): TermConfig {
-  return TERMS.find((t) => t.isDefault) ?? TERMS[0];
+  const slug = getCurrentTermSlug();
+  return getTerm(slug) ?? TERMS[TERMS.length - 1];
 }
 
 /**

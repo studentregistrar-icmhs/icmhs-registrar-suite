@@ -3,6 +3,7 @@ import { findStudentRow } from "./rosterLookup";
 import { readFlagsAt, LAYOUT_FOR_WRITE } from "./parse";
 import { reconcile, STATUS_LABEL, TERMINAL_STATUSES } from "./reconcile";
 import { TERMS } from "./terms";
+import { columnIndex } from "./columns";
 
 export type TimelineEntry = {
   termSlug: string;
@@ -74,6 +75,19 @@ export async function getStudentTimeline(admissionNo: string): Promise<StudentPr
         editable: true,
       });
     }
+  }
+
+  // "live-column" terms (e.g. Sept-Dec 2026 onward) keep their status right
+  // on the student's own roster row instead of a separate log — same idea
+  // as buildFromColumn() does for the main dashboard. Handled as its own
+  // loop (rather than folded into the live-legacy loop above) since it
+  // needs no sheet write/flag reconciliation, just a direct column read.
+  for (const term of TERMS) {
+    if (term.source.kind !== "live-column") continue;
+    const status = inheritedTerminal
+      ? inheritedTerminal
+      : String(loc.rawRow[columnIndex(term.source.column)] ?? "").trim() || "Unmarked";
+    timeline.push({ termSlug: term.slug, termLabel: term.label, status, editable: true });
   }
 
   // Static historical terms would be added here once their JSON snapshots
