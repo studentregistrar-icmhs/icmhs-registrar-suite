@@ -593,6 +593,18 @@ export default function Dashboard({
     return rows;
   }, [selectedStatus, filteredStudents, studentQuery]);
 
+  // "In Session" is the one status where Unmarked is the natural
+  // complement — everyone who'll eventually report started the term
+  // Unmarked. Carries the same campus/gender/course/department/intake
+  // filters as studentPanelList (but never the in-panel search box —
+  // that's for finding one student, not for changing the reporting-rate
+  // denominator) so the "expected to report" figure always agrees with
+  // whatever slice of the roster is currently in view.
+  const unmarkedPanelList = useMemo(() => {
+    if (selectedStatus !== "In Session") return [];
+    return filteredStudents.filter((s) => s.status === "Unmarked");
+  }, [selectedStatus, filteredStudents]);
+
   return (
     <div style={styles.page}>
       <header style={styles.header}>
@@ -1249,6 +1261,7 @@ export default function Dashboard({
         <StudentListPanel
           status={selectedStatus}
           students={studentPanelList}
+          unmarkedStudents={unmarkedPanelList}
           query={studentQuery}
           onQueryChange={setStudentQuery}
           onClose={() => {
@@ -1526,18 +1539,28 @@ function GlobalSearchDropdown({
 function StudentListPanel({
   status,
   students,
+  unmarkedStudents,
   query,
   onQueryChange,
   onClose,
 }: {
   status: string;
   students: { admissionNo: string; name: string; courseCode: string; courseName: string; campus: string; contacts: string }[];
+  /** Unmarked students in the same current filter scope, for the "In Session"
+   * reporting-rate denominator below. Empty/unused for every other status. */
+  unmarkedStudents?: { courseCode: string }[];
   query: string;
   onQueryChange: (q: string) => void;
   onClose: () => void;
 }) {
   const [deptFilter, setDeptFilter] = useState<string | null>(null);
   useEffect(() => { setDeptFilter(null); }, [status]);
+
+  // Only "In Session" gets the reporting-rate treatment: department count
+  // measured against (that department's In Session + still-Unmarked) —
+  // i.e. how far each department has gotten through reporting, rather
+  // than that department's share of everyone who has reported so far.
+  const isReportingRate = status === "In Session" && !!unmarkedStudents;
 
   const byDept = useMemo(() => {
     const counts = new Map<string, number>();
@@ -1547,6 +1570,30 @@ function StudentListPanel({
     }
     return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
   }, [students]);
+
+  const unmarkedByDept = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const s of unmarkedStudents ?? []) {
+      const d = getDepartment(s.courseCode);
+      counts.set(d, (counts.get(d) ?? 0) + 1);
+    }
+    return counts;
+  }, [unmarkedStudents]);
+
+  // For the reporting-rate view, a department that hasn't reported anyone
+  // yet (0 In Session but some still-Unmarked) needs to show up as 0% —
+  // byDept alone would silently drop it, since it's only ever built from
+  // In Session students.
+  const reportingRows = useMemo(() => {
+    if (!isReportingRate) return byDept;
+    const depts = new Set<string>([...byDept.map(([d]) => d), ...unmarkedByDept.keys()]);
+    return Array.from(depts)
+      .map((d): [string, number] => [d, byDept.find(([n]) => n === d)?.[1] ?? 0])
+      .sort((a, b) => b[1] + (unmarkedByDept.get(b[0]) ?? 0) - (a[1] + (unmarkedByDept.get(a[0]) ?? 0)));
+  }, [isReportingRate, byDept, unmarkedByDept]);
+
+  const totalExpected = students.length + (unmarkedStudents?.length ?? 0);
+  const totalPct = totalExpected ? Math.round((students.length / totalExpected) * 100) : 0;
 
   const displayedStudents = useMemo(
     () => (deptFilter ? students.filter((s) => getDepartment(s.courseCode) === deptFilter) : students),
@@ -1570,29 +1617,51 @@ function StudentListPanel({
           style={panelStyles.search}
           autoFocus
         />
-        {byDept.length > 1 && (
+        {(byDept.length > 1 || (isReportingRate && reportingRows.length > 1)) && (
           <div style={panelStyles.deptBreakdown}>
             <div style={panelStyles.deptBreakdownTitle}>
               Breakdown by School/Department {deptFilter && <button style={panelStyles.deptClear} onClick={() => setDeptFilter(null)}>clear filter ✕</button>}
             </div>
-            {byDept.map(([dept, count]) => {
-              const pct = students.length ? Math.round((count / students.length) * 100) : 0;
+            {reportingRows.map(([dept, count]) => {
+              const expected = isReportingRate ? count + (unmarkedByDept.get(dept) ?? 0) : students.length;
+              const pct = expected ? Math.round((count / expected) * 100) : 0;
               const active = deptFilter === dept;
               return (
                 <div
                   key={dept}
                   onClick={() => setDeptFilter(active ? null : dept)}
-                  style={{ ...panelStyles.deptRow, opacity: deptFilter && !active ? 0.45 : 1 }}
-                  title="Click to filter the list below to this School/Department"
+                  style={{
+                    ...panelStyles.deptRow,
+                    ...(isReportingRate ? { gridTemplateColumns: "1fr 90px 100px" } : null),
+                    opacity: deptFilter && !active ? 0.45 : 1,
+                  }}
+                  title={
+                    isReportingRate
+                      ? "Click to filter · % is this department's In Session count against In Session + still-Unmarked for that department"
+                      : "Click to filter the list below to this School/Department"
+                  }
                 >
                   <div style={{ ...panelStyles.deptLabel, fontWeight: active ? 700 : 500 }}>{dept}</div>
                   <div style={panelStyles.deptBarTrack}>
                     <div style={{ ...panelStyles.deptBarFill, width: `${pct}%`, background: active ? C.rose : C.teal }} />
                   </div>
-                  <div style={panelStyles.deptFigures}>{count} · {pct}%</div>
+                  <div style={panelStyles.deptFigures}>
+                    {isReportingRate ? `${count}/${expected}` : count} · {pct}%
+                  </div>
                 </div>
               );
             })}
+            {isReportingRate && (
+              <div style={{ ...panelStyles.deptTotalRow, gridTemplateColumns: "1fr 90px 100px" }}>
+                <div style={{ ...panelStyles.deptLabel, fontWeight: 700 }}>Total reported</div>
+                <div style={panelStyles.deptBarTrack}>
+                  <div style={{ ...panelStyles.deptBarFill, width: `${totalPct}%`, background: C.ink }} />
+                </div>
+                <div style={{ ...panelStyles.deptFigures, fontWeight: 700 }}>
+                  {students.length}/{totalExpected} · {totalPct}%
+                </div>
+              </div>
+            )}
           </div>
         )}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
@@ -1671,6 +1740,7 @@ const panelStyles: Record<string, React.CSSProperties> = {
   deptBreakdownTitle: { fontFamily: "IBM Plex Mono, monospace", fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.04em", color: C.slate, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" },
   deptClear: { border: "none", background: "transparent", color: C.teal, fontSize: 10.5, cursor: "pointer", fontFamily: "IBM Plex Mono, monospace", padding: 0, textTransform: "none", letterSpacing: 0 },
   deptRow: { display: "grid", gridTemplateColumns: "1fr 90px 70px", alignItems: "center", gap: 8, padding: "3px 0", cursor: "pointer" },
+  deptTotalRow: { display: "grid", gridTemplateColumns: "1fr 90px 70px", alignItems: "center", gap: 8, padding: "6px 0 2px", marginTop: 4, borderTop: `1px solid ${C.line}` },
   deptLabel: { fontSize: 11.5, color: C.ink },
   deptBarTrack: { background: "#fff", borderRadius: 4, height: 10, overflow: "hidden", border: `1px solid ${C.line}` },
   deptBarFill: { height: "100%", borderRadius: 4 },
