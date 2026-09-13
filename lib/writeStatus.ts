@@ -6,11 +6,13 @@ import { readFlagsAt, LAYOUT_FOR_WRITE, parseCampusRows } from "./parse";
 import { inheritedTerminalFlags } from "./statusLog";
 import { columnIndex } from "./columns";
 import { loadTermData } from "./loadTermData";
+import { GRADUATION_COHORT_COLUMN } from "./graduationCohort";
 
 // The one status the validity-date field applies to — see lib/terms.ts's
 // validityColumn. Read off STATUS_LABEL rather than hardcoding the string,
 // so if that label is ever renamed this stays correct automatically.
 const IN_SESSION_LABEL = STATUS_LABEL.reported;
+const GRADUATED_LABEL = STATUS_LABEL.graduation;
 
 /**
  * Writes a validity date into a live-column term's validityColumn for one
@@ -34,6 +36,19 @@ async function writeValidityDate(term: ReturnType<typeof getTerm>, admissionNo: 
   await batchUpdateRanges(updates);
 }
 
+/**
+ * Writes the Graduation Cohort year for one student — a single column, not
+ * tied to any particular term (see lib/graduationCohort.ts). Safe to call
+ * unconditionally alongside any status write; it's the caller's job to only
+ * do so when the new status is actually "Graduated".
+ */
+async function writeGraduationCohort(admissionNo: string, cohortYear: string): Promise<void> {
+  const loc = await findStudentRow(admissionNo);
+  if (!loc) return;
+  const tabName = loc.campus === "MAIN" ? "MAIN CAMPUS" : "NAKURU CAMPUS";
+  await updateRange(`${tabName}!${GRADUATION_COHORT_COLUMN}${loc.sheetRowNumber}`, [cohortYear]);
+}
+
 export type WriteResult =
   | { ok: true }
   | { ok: false; reason: "terminal-lock"; blockingTerm: string; blockingStatus: string }
@@ -45,16 +60,31 @@ export type WriteResult =
  * Checks every live term for this student and returns the first one found
  * with a terminal status (Graduated/Dropped), if any. A student who has
  * ever graduated or dropped is locked everywhere unless overridden.
+ *
+ * Checks "live-column" terms (e.g. Sept-Dec 2026 onward) as well as
+ * "live-legacy" ones — a student graduated/dropped purely through a
+ * live-column term's status cell, with no legacy flag or Status Log entry
+ * anywhere, wasn't being caught here before, which meant the terminal lock
+ * could be silently bypassed for exactly the students this feature cares
+ * most about (anyone graduating from Sept-Dec 2026 onward).
  */
 async function findTerminalBlock(admissionNo: string): Promise<{ term: string; status: string } | null> {
   const loc = await findStudentRow(admissionNo);
   if (loc) {
     for (const term of TERMS) {
-      if (term.source.kind !== "live-legacy") continue;
-      const flags = readFlagsAt(loc.rawRow, loc.campus, term.source.block);
-      const r = reconcile(flags);
-      if (r.canonicalStatus !== "UNMARKED" && TERMINAL_STATUSES.includes(r.canonicalStatus)) {
-        return { term: term.label, status: STATUS_LABEL[r.canonicalStatus] };
+      if (term.source.kind === "live-legacy") {
+        const flags = readFlagsAt(loc.rawRow, loc.campus, term.source.block);
+        const r = reconcile(flags);
+        if (r.canonicalStatus !== "UNMARKED" && TERMINAL_STATUSES.includes(r.canonicalStatus)) {
+          return { term: term.label, status: STATUS_LABEL[r.canonicalStatus] };
+        }
+      }
+      if (term.source.kind === "live-column") {
+        const raw = String(loc.rawRow[columnIndex(term.source.column)] ?? "").trim();
+        const key = LABEL_TO_FLAG[raw];
+        if (key && TERMINAL_STATUSES.includes(key)) {
+          return { term: term.label, status: STATUS_LABEL[key] };
+        }
       }
     }
   }
@@ -76,14 +106,20 @@ async function findTerminalBlock(admissionNo: string): Promise<{ term: string; s
   return null;
 }
 
-/** Sets a student's status for a term. Enforces the terminal lock unless override is true. */
+/** Sets a student's status for a term. Enforces the terminal lock unless override is true.
+ * If newStatusLabel is "In Session" and validityDate is provided, also writes the lecture
+ * card validity date (and auto-stamps date-reported) the same way the Unmarked-list flows do.
+ * If newStatusLabel is "Graduated" and graduationCohort is provided, also writes that year
+ * to the standalone Graduation Cohort column (see lib/graduationCohort.ts) in the same call. */
 export async function updateStudentStatus(opts: {
   admissionNo: string;
   termSlug: string;
   newStatusLabel: string;
   override?: boolean;
+  validityDate?: string;
+  graduationCohort?: string;
 }): Promise<WriteResult> {
-  const { admissionNo, termSlug, newStatusLabel, override } = opts;
+  const { admissionNo, termSlug, newStatusLabel, override, validityDate, graduationCohort } = opts;
   const term = getTerm(termSlug);
   if (!term) return { ok: false, reason: "unsupported-term" };
   const newKey = LABEL_TO_FLAG[newStatusLabel];
@@ -96,6 +132,8 @@ export async function updateStudentStatus(opts: {
     }
   }
 
+  let result: WriteResult;
+
   if (term.source.kind === "live-legacy") {
     const loc = await findStudentRow(admissionNo);
     if (!loc) return { ok: false, reason: "not-found" };
@@ -106,23 +144,28 @@ export async function updateStudentStatus(opts: {
     );
     const range = `${loc.campus === "MAIN" ? "MAIN CAMPUS" : "NAKURU CAMPUS"}!${colLetter(startCol)}${loc.sheetRowNumber}:${colLetter(startCol + 7)}${loc.sheetRowNumber}`;
     await updateRange(range, values);
-    return { ok: true };
-  }
-
-  if (term.source.kind === "live-statuslog") {
+    result = { ok: true };
+  } else if (term.source.kind === "live-statuslog") {
     await appendRow("STATUS LOG", [admissionNo, term.source.termLabel, newStatusLabel, new Date().toISOString().slice(0, 10)]);
-    return { ok: true };
-  }
-
-  if (term.source.kind === "live-column") {
+    result = { ok: true };
+  } else if (term.source.kind === "live-column") {
     const loc = await findStudentRow(admissionNo);
     if (!loc) return { ok: false, reason: "not-found" };
     const tabName = loc.campus === "MAIN" ? "MAIN CAMPUS" : "NAKURU CAMPUS";
     await updateRange(`${tabName}!${term.source.column}${loc.sheetRowNumber}`, [newStatusLabel]);
-    return { ok: true };
+    result = { ok: true };
+  } else {
+    return { ok: false, reason: "unsupported-term" }; // static historical terms are read-only
   }
 
-  return { ok: false, reason: "unsupported-term" }; // static historical terms are read-only
+  if (result.ok && newKey === "reported" && validityDate && validityDate.trim()) {
+    await writeValidityDate(term, admissionNo, validityDate.trim());
+  }
+  if (result.ok && newKey === "graduation" && graduationCohort && graduationCohort.trim()) {
+    await writeGraduationCohort(admissionNo, graduationCohort.trim());
+  }
+
+  return result;
 }
 
 /** Clears every flag except the canonical one for a legacy term's conflict. Never touches Status Log terms (they can't conflict).
@@ -259,7 +302,8 @@ export async function markUnmarkedStudent(
   termSlug: string,
   newStatusLabel: string,
   markedBy: string,
-  validityDate?: string
+  validityDate?: string,
+  graduationCohort?: string
 ): Promise<WriteResult> {
   const term = getTerm(termSlug);
   if (!term) return { ok: false, reason: "unsupported-term" };
@@ -277,7 +321,7 @@ export async function markUnmarkedStudent(
 
   // No override: a student who is genuinely terminal-locked elsewhere should
   // still be blocked here, same as the profile page's first attempt.
-  const writeResult = await updateStudentStatus({ admissionNo, termSlug, newStatusLabel });
+  const writeResult = await updateStudentStatus({ admissionNo, termSlug, newStatusLabel, graduationCohort });
 
   if (writeResult.ok) {
     if (newStatusLabel === IN_SESSION_LABEL && validityDate) {
@@ -400,7 +444,8 @@ export async function bulkUploadStatuses(
   termSlug: string,
   rows: { admissionNo: string; status: string }[],
   override: boolean,
-  validityDate?: string
+  validityDate?: string,
+  graduationCohort?: string
 ): Promise<{ ok: true; results: BulkUploadOutcome[] } | { ok: false; reason: "unsupported-term" }> {
   const term = getTerm(termSlug);
   if (!term || term.source.kind !== "live-column") return { ok: false, reason: "unsupported-term" };
@@ -441,11 +486,21 @@ export async function bulkUploadStatuses(
 
   function terminalBlockFor(loc: { rawRow: any[]; campus: "MAIN" | "NAKURU" }, admissionNo: string) {
     for (const t of TERMS) {
-      if (t.source.kind !== "live-legacy") continue;
-      const flags = readFlagsAt(loc.rawRow, loc.campus, t.source.block);
-      const r = reconcile(flags);
-      if (r.canonicalStatus !== "UNMARKED" && TERMINAL_STATUSES.includes(r.canonicalStatus)) {
-        return { term: t.label, status: STATUS_LABEL[r.canonicalStatus] };
+      if (t.source.kind === "live-legacy") {
+        const flags = readFlagsAt(loc.rawRow, loc.campus, t.source.block);
+        const r = reconcile(flags);
+        if (r.canonicalStatus !== "UNMARKED" && TERMINAL_STATUSES.includes(r.canonicalStatus)) {
+          return { term: t.label, status: STATUS_LABEL[r.canonicalStatus] };
+        }
+      }
+      if (t.source.kind === "live-column") {
+        const idx = columnIndex(t.source.column);
+        if (idx >= loc.rawRow.length) continue; // this term's column wasn't fetched for this batch — nothing to check
+        const raw = String(loc.rawRow[idx] ?? "").trim();
+        const key = LABEL_TO_FLAG[raw];
+        if (key && TERMINAL_STATUSES.includes(key)) {
+          return { term: t.label, status: STATUS_LABEL[key] };
+        }
       }
     }
     for (const [logTerm, status] of logByAdmission.get(admissionNo) ?? []) {
@@ -500,6 +555,9 @@ export async function bulkUploadStatuses(
         updates.push({ range: `${loc.tab}!${term.source.dateReportedColumn}${loc.row}`, values: [dateReported] });
       }
     }
+    if (val === GRADUATED_LABEL && graduationCohort && graduationCohort.trim()) {
+      updates.push({ range: `${loc.tab}!${GRADUATION_COHORT_COLUMN}${loc.row}`, values: [graduationCohort.trim()] });
+    }
     results.push({ admissionNo: adm, ok: true });
   }
 
@@ -527,7 +585,8 @@ export async function bulkMarkUnmarked(
   admissionNos: string[],
   status: string,
   markedBy: string,
-  validityDate?: string
+  validityDate?: string,
+  graduationCohort?: string
 ): Promise<{ ok: true; results: BulkMarkOutcome[] } | { ok: false; reason: string }> {
   const term = getTerm(termSlug);
   if (!term) return { ok: false, reason: "unsupported-term" };
@@ -535,12 +594,12 @@ export async function bulkMarkUnmarked(
 
   if (term.source.kind === "live-column") {
     const rows = admissionNos.map((admissionNo) => ({ admissionNo, status }));
-    return bulkUploadStatuses(termSlug, rows, false, validityDate);
+    return bulkUploadStatuses(termSlug, rows, false, validityDate, graduationCohort);
   }
 
   const results: BulkMarkOutcome[] = [];
   for (const admissionNo of admissionNos) {
-    const r = await markUnmarkedStudent(admissionNo, termSlug, status, markedBy, validityDate);
+    const r = await markUnmarkedStudent(admissionNo, termSlug, status, markedBy, validityDate, graduationCohort);
     results.push(
       r.ok
         ? { admissionNo, ok: true }
@@ -552,5 +611,107 @@ export async function bulkMarkUnmarked(
           }
     );
   }
+  return { ok: true, results };
+}
+
+/**
+ * Tags a batch of ALREADY-graduated students with a graduation cohort year —
+ * pure metadata, doesn't touch any term's status. Built for backfilling the
+ * cohorts that predate this column (e.g. the 2023/2024/2026 graduations)
+ * and for correcting a cohort tag later. Since it's not a status change,
+ * it never trips the terminal lock and never needs an override — the point
+ * is precisely to annotate a student who is already (and stays) Graduated.
+ *
+ * Each admission number is required to currently resolve to Graduated
+ * specifically (not just any terminal status) before being tagged — checked
+ * across live-legacy flags, every live-column term, and the retired Status
+ * Log, so a typo'd admission number or an actually-Dropped student can't
+ * get silently tagged as if they were a graduate. Fetches each roster tab
+ * and the Status Log ONCE regardless of batch size, the same way
+ * bulkUploadStatuses does, rather than one findStudentRow round-trip per
+ * admission number — this is meant to comfortably handle a few hundred
+ * names at once (a full cohort list).
+ */
+export type CohortTagOutcome =
+  | { admissionNo: string; ok: true }
+  | { admissionNo: string; ok: false; reason: "not-found" | "not-graduated" };
+
+export async function bulkTagGraduationCohort(
+  admissionNos: string[],
+  cohortYear: string
+): Promise<{ ok: true; results: CohortTagOutcome[] }> {
+  const year = cohortYear.trim();
+
+  const [mainRows, nakuruRows, logRows] = await Promise.all([
+    fetchSheetRows("MAIN CAMPUS!A:AD"),
+    fetchSheetRows("NAKURU CAMPUS!A:AD"),
+    fetchSheetRows("STATUS LOG!A:D").catch(() => []),
+  ]);
+
+  const byAdmission = new Map<string, { campus: "MAIN" | "NAKURU"; row: number; rawRow: any[] }>();
+  for (const [campus, rowsArr] of [["MAIN", mainRows], ["NAKURU", nakuruRows]] as const) {
+    for (let i = 2; i < rowsArr.length; i++) {
+      const r = rowsArr[i];
+      if (r && r[1] != null && String(r[1]).trim() !== "") {
+        byAdmission.set(String(r[1]).trim(), { campus, row: i + 1, rawRow: r });
+      }
+    }
+  }
+
+  const logByAdmission = new Map<string, Map<string, string>>();
+  for (let i = 1; i < logRows.length; i++) {
+    const [admissionNo, logTerm, status] = logRows[i] ?? [];
+    if (!admissionNo) continue;
+    const key = String(admissionNo);
+    if (!logByAdmission.has(key)) logByAdmission.set(key, new Map());
+    logByAdmission.get(key)!.set(String(logTerm), String(status));
+  }
+
+  function isGraduated(loc: { rawRow: any[]; campus: "MAIN" | "NAKURU" }, admissionNo: string): boolean {
+    for (const t of TERMS) {
+      if (t.source.kind === "live-legacy") {
+        const flags = readFlagsAt(loc.rawRow, loc.campus, t.source.block);
+        if (reconcile(flags).canonicalStatus === "graduation") return true;
+      }
+      if (t.source.kind === "live-column") {
+        const idx = columnIndex(t.source.column);
+        if (idx >= loc.rawRow.length) continue;
+        const raw = String(loc.rawRow[idx] ?? "").trim();
+        if (LABEL_TO_FLAG[raw] === "graduation") return true;
+      }
+    }
+    for (const status of (logByAdmission.get(admissionNo) ?? new Map()).values()) {
+      if (LABEL_TO_FLAG[status.trim()] === "graduation") return true;
+    }
+    return false;
+  }
+
+  const results: CohortTagOutcome[] = [];
+  const updates: { range: string; values: any[] }[] = [];
+  const seen = new Set<string>();
+
+  for (const admissionNoRaw of admissionNos) {
+    const admissionNo = admissionNoRaw.trim();
+    if (!admissionNo || seen.has(admissionNo)) continue;
+    seen.add(admissionNo);
+
+    const loc = byAdmission.get(admissionNo);
+    if (!loc) {
+      results.push({ admissionNo, ok: false, reason: "not-found" });
+      continue;
+    }
+    if (!isGraduated(loc, admissionNo)) {
+      results.push({ admissionNo, ok: false, reason: "not-graduated" });
+      continue;
+    }
+    const tabName = loc.campus === "MAIN" ? "MAIN CAMPUS" : "NAKURU CAMPUS";
+    updates.push({ range: `${tabName}!${GRADUATION_COHORT_COLUMN}${loc.row}`, values: [year] });
+    results.push({ admissionNo, ok: true });
+  }
+
+  if (updates.length > 0) {
+    await batchUpdateRanges(updates);
+  }
+
   return { ok: true, results };
 }

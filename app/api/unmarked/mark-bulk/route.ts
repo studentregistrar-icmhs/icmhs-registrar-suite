@@ -9,12 +9,13 @@ const MAX_ROWS = 500; // this is the Unmarked list, not a CSV upload — a gener
 // RESOLVE LOG (legacy terms) or is directly visible in the status column
 // (live-column terms) with who did it.
 export async function POST(req: NextRequest) {
-  const { termSlug, admissionNos, status, markedBy, validityDate } = (await req.json()) as {
+  const { termSlug, admissionNos, status, markedBy, validityDate, graduationCohort } = (await req.json()) as {
     termSlug?: string;
     admissionNos?: string[];
     status?: string;
     markedBy?: string;
     validityDate?: string;
+    graduationCohort?: string;
   };
 
   if (!termSlug || !status || !Array.isArray(admissionNos) || admissionNos.length === 0) {
@@ -26,7 +27,14 @@ export async function POST(req: NextRequest) {
 
   const name = (markedBy || "").trim() || "Unknown";
   const clean = admissionNos.map((a) => String(a).trim()).filter(Boolean);
-  const result = await bulkMarkUnmarked(termSlug, clean, status, name, validityDate?.trim() || undefined);
+  const result = await bulkMarkUnmarked(
+    termSlug,
+    clean,
+    status,
+    name,
+    validityDate?.trim() || undefined,
+    graduationCohort?.trim() || undefined
+  );
 
   if (result.ok) {
     revalidatePath(`/terms/${termSlug}`);

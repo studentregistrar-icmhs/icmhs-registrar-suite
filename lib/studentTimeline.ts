@@ -2,14 +2,15 @@ import { fetchSheetRows } from "./googleSheets";
 import { findStudentRow } from "./rosterLookup";
 import { readFlagsAt, LAYOUT_FOR_WRITE } from "./parse";
 import { reconcile, STATUS_LABEL, TERMINAL_STATUSES } from "./reconcile";
-import { TERMS } from "./terms";
+import { TERMS, getCurrentTermSlug } from "./terms";
 import { columnIndex } from "./columns";
+import { GRADUATION_COHORT_COLUMN } from "./graduationCohort";
 
 export type TimelineEntry = {
   termSlug: string;
   termLabel: string;
   status: string;
-  editable: boolean; // false for static historical terms
+  editable: boolean; // false for static historical terms, AND for any term other than the one being viewed — see viewingTermSlug below
 };
 
 export type StudentProfile = {
@@ -21,10 +22,29 @@ export type StudentProfile = {
   contacts: string;
   intakeYear: string;
   campus: "MAIN" | "NAKURU";
+  /** Only ever meaningful for Graduated students — see lib/graduationCohort.ts. */
+  graduationCohort: string;
+  /** The term this profile is being viewed "as of" — defaults to the
+   * current calendar term when the caller doesn't specify one. Only this
+   * term's entry in `timeline` is editable, and no term after it is
+   * included at all (see getStudentTimeline's viewingTermSlug param). */
+  viewingTermSlug: string;
   timeline: TimelineEntry[];
 };
 
-export async function getStudentTimeline(admissionNo: string): Promise<StudentProfile | null> {
+/**
+ * @param viewingTermSlug Which term this profile is being viewed "as of" —
+ * normally passed straight through from wherever the person navigated from
+ * (a term's dashboard, a search result, etc). Terms after this one are
+ * dropped from the timeline entirely (view a Jan-Apr dashboard, and you
+ * can't see or edit May-Aug/Sept-Dec for that student), and terms before
+ * it are included but forced read-only — only the viewing term itself can
+ * be edited. Falls back to the current calendar term for an unrecognized
+ * or omitted value, so navigating here without term context (e.g. the
+ * generic /students search) still can't be used to bypass the restriction
+ * and edit an arbitrary term.
+ */
+export async function getStudentTimeline(admissionNo: string, viewingTermSlug?: string): Promise<StudentProfile | null> {
   const loc = await findStudentRow(admissionNo);
   if (!loc) return null;
 
@@ -93,6 +113,20 @@ export async function getStudentTimeline(admissionNo: string): Promise<StudentPr
   // Static historical terms would be added here once their JSON snapshots
   // include a per-student index — skipped for now (see data/historical/README.md).
 
+  // Restrict to the viewing term: drop everything after it, and force
+  // everything before it to read-only. TERMS is in chronological order, so
+  // its index doubles as a timeline for this comparison.
+  const resolvedViewingSlug = viewingTermSlug && TERMS.some((t) => t.slug === viewingTermSlug)
+    ? viewingTermSlug
+    : getCurrentTermSlug();
+  const viewingIndex = TERMS.findIndex((t) => t.slug === resolvedViewingSlug);
+
+  const scopedTimeline = timeline
+    .filter((entry) => TERMS.findIndex((t) => t.slug === entry.termSlug) <= viewingIndex)
+    .map((entry) =>
+      entry.termSlug === resolvedViewingSlug ? entry : { ...entry, editable: false }
+    );
+
   return {
     admissionNo,
     name: String(loc.rawRow[nameCol] ?? "").trim(),
@@ -102,6 +136,8 @@ export async function getStudentTimeline(admissionNo: string): Promise<StudentPr
     contacts: String(loc.rawRow[layout.contacts] ?? "").trim(),
     intakeYear: layout.intake !== undefined ? String(loc.rawRow[layout.intake] ?? "").trim() : "",
     campus: loc.campus,
-    timeline,
+    graduationCohort: String(loc.rawRow[columnIndex(GRADUATION_COHORT_COLUMN)] ?? "").trim(),
+    viewingTermSlug: resolvedViewingSlug,
+    timeline: scopedTimeline,
   };
 }

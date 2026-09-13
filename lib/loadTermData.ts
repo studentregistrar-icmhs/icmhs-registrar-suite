@@ -8,6 +8,19 @@ import { buildDashboardData, DashboardData } from "./aggregate";
 import { buildConflictReport, ConflictRow } from "./reconcile";
 import { isFutureIntake } from "./intake";
 import { columnIndex } from "./columns";
+import { GRADUATION_COHORT_COLUMN } from "./graduationCohort";
+
+// Every roster fetch must reach at least as far as the Graduation Cohort
+// column (see lib/graduationCohort.ts) — it's read into every Student
+// regardless of which term is being loaded, so parseCampusRows always has
+// it available. Widened per term-kind below to whichever is further right:
+// this column, or (for a live-column term) that term's own status column.
+function rosterRangeEnd(colLetterOfThisTerm?: string): string {
+  if (!colLetterOfThisTerm) return GRADUATION_COHORT_COLUMN;
+  return columnIndex(colLetterOfThisTerm) > columnIndex(GRADUATION_COHORT_COLUMN)
+    ? colLetterOfThisTerm
+    : GRADUATION_COHORT_COLUMN;
+}
 
 export type TermData = {
   dashboard: DashboardData;
@@ -50,8 +63,8 @@ export async function loadTermData(slug: string): Promise<TermData | null> {
   try {
     if (term.source.kind === "live-legacy") {
       const [mainRows, nakuruRows] = await Promise.all([
-        fetchSheetRows("MAIN CAMPUS!A:Z"),
-        fetchSheetRows("NAKURU CAMPUS!A:X"),
+        fetchSheetRows(`MAIN CAMPUS!A:${rosterRangeEnd()}`),
+        fetchSheetRows(`NAKURU CAMPUS!A:${rosterRangeEnd()}`),
       ]);
       const students = [
         ...parseCampusRows(mainRows, "MAIN"),
@@ -67,8 +80,8 @@ export async function loadTermData(slug: string): Promise<TermData | null> {
 
     if (term.source.kind === "live-statuslog") {
       const [mainRows, nakuruRows, logRows] = await Promise.all([
-        fetchSheetRows("MAIN CAMPUS!A:Z"),
-        fetchSheetRows("NAKURU CAMPUS!A:X"),
+        fetchSheetRows(`MAIN CAMPUS!A:${rosterRangeEnd()}`),
+        fetchSheetRows(`NAKURU CAMPUS!A:${rosterRangeEnd()}`),
         fetchSheetRows("STATUS LOG!A:D"),
       ]);
       const roster = [
@@ -85,9 +98,10 @@ export async function loadTermData(slug: string): Promise<TermData | null> {
 
     if (term.source.kind === "live-column") {
       const col = term.source.column;
+      const fetchEnd = rosterRangeEnd(col);
       const [mainRows, nakuruRows] = await Promise.all([
-        fetchSheetRows(`MAIN CAMPUS!A:${col}`),
-        fetchSheetRows(`NAKURU CAMPUS!A:${col}`),
+        fetchSheetRows(`MAIN CAMPUS!A:${fetchEnd}`),
+        fetchSheetRows(`NAKURU CAMPUS!A:${fetchEnd}`),
       ]);
       const roster = [
         ...parseCampusRows(mainRows, "MAIN"),

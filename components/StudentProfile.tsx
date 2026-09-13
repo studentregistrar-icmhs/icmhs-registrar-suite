@@ -14,26 +14,48 @@ const C = {
   teal: "#0F7268", rose: "#B0432E", slate: "#54625D",
 };
 
+type LockNotice = {
+  termSlug: string;
+  status: string;
+  blockingTerm: string;
+  blockingStatus: string;
+  validityDate?: string;
+  graduationCohort?: string;
+};
+
 export default function StudentProfile({ initialProfile }: { initialProfile: Profile }) {
   const router = useRouter();
   const [profile, setProfile] = useState(initialProfile);
   const [pendingTerm, setPendingTerm] = useState<string | null>(null);
   const [pendingStatus, setPendingStatus] = useState<string>("");
+  const [pendingValidityDate, setPendingValidityDate] = useState<string>("");
+  const [pendingGraduationCohort, setPendingGraduationCohort] = useState<string>("");
   const [saving, setSaving] = useState(false);
-  const [lockNotice, setLockNotice] = useState<{ termSlug: string; status: string; blockingTerm: string; blockingStatus: string } | null>(null);
+  const [lockNotice, setLockNotice] = useState<LockNotice | null>(null);
 
   async function refresh() {
-    const res = await fetch(`/api/students/${encodeURIComponent(profile.admissionNo)}`, { cache: "no-store" });
+    // Keep the same viewing-term context on refresh — otherwise a save would
+    // silently jump back to whatever the current calendar term is.
+    const res = await fetch(
+      `/api/students/${encodeURIComponent(profile.admissionNo)}?term=${encodeURIComponent(profile.viewingTermSlug)}`,
+      { cache: "no-store" }
+    );
     if (res.ok) setProfile(await res.json());
   }
 
-  async function save(termSlug: string, status: string, override = false) {
+  async function save(
+    termSlug: string,
+    status: string,
+    override = false,
+    validityDate?: string,
+    graduationCohort?: string
+  ) {
     setSaving(true);
     try {
       const res = await fetch(`/api/students/${encodeURIComponent(profile.admissionNo)}/status`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ termSlug, status, override }),
+        body: JSON.stringify({ termSlug, status, override, validityDate, graduationCohort }),
       });
       const json = await res.json();
       if (json.ok) {
@@ -41,7 +63,7 @@ export default function StudentProfile({ initialProfile }: { initialProfile: Pro
         setPendingTerm(null);
         await refresh();
       } else if (json.reason === "terminal-lock") {
-        setLockNotice({ termSlug, status, blockingTerm: json.blockingTerm, blockingStatus: json.blockingStatus });
+        setLockNotice({ termSlug, status, blockingTerm: json.blockingTerm, blockingStatus: json.blockingStatus, validityDate, graduationCohort });
       } else {
         alert(`Couldn't update status: ${json.reason ?? "unknown error"}`);
       }
@@ -67,6 +89,11 @@ export default function StudentProfile({ initialProfile }: { initialProfile: Pro
       <div style={styles.contactRow}>
         {profile.contacts && <span>📞 {profile.contacts}</span>}
         {profile.intakeYear && <span>Intake: {profile.intakeYear}</span>}
+        {profile.graduationCohort && <span>🎓 Graduation cohort: {profile.graduationCohort}</span>}
+      </div>
+      <div style={styles.viewingNote}>
+        Viewing as of {profile.timeline.find((e) => e.termSlug === profile.viewingTermSlug)?.termLabel ?? "the current term"} —
+        only that term can be edited here; later terms aren't shown.
       </div>
 
       <div style={styles.timeline}>
@@ -79,11 +106,25 @@ export default function StudentProfile({ initialProfile }: { initialProfile: Pro
             onStartEdit={() => {
               setPendingTerm(entry.termSlug);
               setPendingStatus(entry.status === "Unmarked" ? STATUS_OPTIONS[0] : entry.status);
+              setPendingValidityDate("");
+              setPendingGraduationCohort(profile.graduationCohort || "");
             }}
             onCancel={() => setPendingTerm(null)}
             pendingStatus={pendingStatus}
             onStatusChange={setPendingStatus}
-            onSave={() => save(entry.termSlug, pendingStatus)}
+            pendingValidityDate={pendingValidityDate}
+            onValidityDateChange={setPendingValidityDate}
+            pendingGraduationCohort={pendingGraduationCohort}
+            onGraduationCohortChange={setPendingGraduationCohort}
+            onSave={() =>
+              save(
+                entry.termSlug,
+                pendingStatus,
+                false,
+                pendingStatus === "In Session" ? pendingValidityDate : undefined,
+                pendingStatus === "Graduated" ? pendingGraduationCohort : undefined
+              )
+            }
           />
         ))}
         {profile.timeline.length === 0 && (
@@ -107,7 +148,7 @@ export default function StudentProfile({ initialProfile }: { initialProfile: Pro
               <button style={styles.cancelBtn} onClick={() => setLockNotice(null)}>Cancel</button>
               <button
                 style={styles.overrideBtn}
-                onClick={() => save(lockNotice.termSlug, lockNotice.status, true)}
+                onClick={() => save(lockNotice.termSlug, lockNotice.status, true, lockNotice.validityDate, lockNotice.graduationCohort)}
               >
                 Override and save
               </button>
@@ -120,7 +161,11 @@ export default function StudentProfile({ initialProfile }: { initialProfile: Pro
 }
 
 function TimelineRow({
-  entry, isPending, saving, onStartEdit, onCancel, pendingStatus, onStatusChange, onSave,
+  entry, isPending, saving, onStartEdit, onCancel,
+  pendingStatus, onStatusChange,
+  pendingValidityDate, onValidityDateChange,
+  pendingGraduationCohort, onGraduationCohortChange,
+  onSave,
 }: {
   entry: TimelineEntry;
   isPending: boolean;
@@ -129,20 +174,45 @@ function TimelineRow({
   onCancel: () => void;
   pendingStatus: string;
   onStatusChange: (s: string) => void;
+  pendingValidityDate: string;
+  onValidityDateChange: (d: string) => void;
+  pendingGraduationCohort: string;
+  onGraduationCohortChange: (c: string) => void;
   onSave: () => void;
 }) {
   const isTerminal = entry.status === "Graduated" || entry.status === "Dropped";
+  const needsValidityDate = pendingStatus === "In Session";
+  const canSave = !needsValidityDate || pendingValidityDate.trim() !== "";
   return (
     <div style={styles.row}>
       <div style={styles.rowLabel}>{entry.termLabel}</div>
       {isPending ? (
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
           <select value={pendingStatus} onChange={(e) => onStatusChange(e.target.value)} style={styles.select}>
             {STATUS_OPTIONS.map((s) => (
               <option key={s} value={s}>{s}</option>
             ))}
           </select>
-          <button style={styles.saveBtn} disabled={saving} onClick={onSave}>
+          {pendingStatus === "In Session" && (
+            <input
+              type="date"
+              style={styles.select}
+              value={pendingValidityDate}
+              onChange={(e) => onValidityDateChange(e.target.value)}
+              title="Lecture card validity date — today's date is auto-recorded alongside it as the date reported"
+            />
+          )}
+          {pendingStatus === "Graduated" && (
+            <input
+              type="text"
+              placeholder="Cohort year, e.g. 2026"
+              style={{ ...styles.select, width: 140 }}
+              value={pendingGraduationCohort}
+              onChange={(e) => onGraduationCohortChange(e.target.value)}
+              title="Graduation cohort year — leave blank to skip tagging it now"
+            />
+          )}
+          <button style={styles.saveBtn} disabled={saving || !canSave} onClick={onSave}>
             {saving ? "Saving…" : "Save"}
           </button>
           <button style={styles.cancelBtnSmall} onClick={onCancel}>Cancel</button>
@@ -167,7 +237,8 @@ const styles: Record<string, React.CSSProperties> = {
   eyebrow: { fontFamily: "IBM Plex Mono, monospace", fontSize: 12, color: C.teal, fontWeight: 600 },
   h1: { fontFamily: "Space Grotesk, sans-serif", fontWeight: 700, fontSize: 28, margin: "4px 0 0" },
   sub: { fontSize: 13, color: C.slate, marginBottom: 6 },
-  contactRow: { display: "flex", gap: 16, fontSize: 12.5, color: C.slate, fontFamily: "IBM Plex Mono, monospace", marginBottom: 24 },
+  contactRow: { display: "flex", gap: 16, fontSize: 12.5, color: C.slate, fontFamily: "IBM Plex Mono, monospace", marginBottom: 8, flexWrap: "wrap" },
+  viewingNote: { fontSize: 12, color: C.slate, marginBottom: 20, lineHeight: 1.5 },
   timeline: { display: "flex", flexDirection: "column", gap: 10 },
   row: { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", border: `1px solid ${C.line}`, borderRadius: 8, padding: "14px 16px" },
   rowLabel: { fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 14 },

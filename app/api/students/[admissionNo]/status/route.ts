@@ -7,10 +7,12 @@ export async function POST(
   { params }: { params: { admissionNo: string } }
 ) {
   const body = await req.json();
-  const { termSlug, status, override } = body as {
+  const { termSlug, status, override, validityDate, graduationCohort } = body as {
     termSlug: string;
     status: string;
     override?: boolean;
+    validityDate?: string;
+    graduationCohort?: string;
   };
 
   if (!termSlug || !status) {
@@ -22,6 +24,8 @@ export async function POST(
     termSlug,
     newStatusLabel: status,
     override,
+    validityDate: validityDate?.trim() || undefined,
+    graduationCohort: graduationCohort?.trim() || undefined,
   });
 
   if (result.ok) {

@@ -11,6 +11,8 @@ export type StudentSummary = {
   gender: string;
   contacts: string;
   intakeYear: string;
+  /** Only ever meaningful for Graduated students — see lib/graduationCohort.ts. */
+  graduationCohort: string;
 };
 
 export type DashboardData = {
@@ -172,6 +174,7 @@ export function buildDashboardData(students: ReconcilableStudent[]): DashboardDa
       gender: s.gender,
       contacts: s.contacts,
       intakeYear: s.intakeYear,
+      graduationCohort: s.graduationCohort,
     });
   }
 

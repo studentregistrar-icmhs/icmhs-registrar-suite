@@ -101,6 +101,62 @@ export default function Dashboard({
     { admissionNo: string; ok: boolean; reason?: string; detail?: string }[] | null
   >(null);
 
+  const [cohortTagOpen, setCohortTagOpen] = useState(false);
+  const [cohortTagText, setCohortTagText] = useState("");
+  const [cohortTagYear, setCohortTagYear] = useState("");
+  const [cohortTagPassword, setCohortTagPassword] = useState("");
+  const [cohortTagBusy, setCohortTagBusy] = useState(false);
+  const [cohortTagResults, setCohortTagResults] = useState<
+    { admissionNo: string; ok: boolean; reason?: string }[] | null
+  >(null);
+
+  const cohortTagAdmissionNos = useMemo(
+    () =>
+      cohortTagText
+        .split(/[\n,]+/)
+        .map((s) => s.trim())
+        .filter(Boolean),
+    [cohortTagText]
+  );
+
+  function closeCohortTagModal() {
+    setCohortTagOpen(false);
+    setCohortTagText("");
+    setCohortTagYear("");
+    setCohortTagPassword("");
+    setCohortTagResults(null);
+  }
+
+  async function handleCohortTagSubmit() {
+    if (cohortTagAdmissionNos.length === 0 || !cohortTagYear.trim() || !cohortTagPassword.trim()) return;
+    setCohortTagBusy(true);
+    try {
+      const res = await fetch("/api/students/graduation-cohort/mark-bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          admissionNos: cohortTagAdmissionNos,
+          cohortYear: cohortTagYear.trim(),
+          password: cohortTagPassword,
+        }),
+      });
+      const json = await res.json();
+      if (res.status === 401) {
+        alert("Wrong password — nothing was changed.");
+        return;
+      }
+      if (!json.ok) {
+        alert(`Couldn't tag cohort: ${json.reason ?? "unknown error"}`);
+        return;
+      }
+      setCohortTagResults(json.results);
+      const succeeded = json.results.filter((r: any) => r.ok).length;
+      if (succeeded > 0) await handleRefresh();
+    } finally {
+      setCohortTagBusy(false);
+    }
+  }
+
   const bulkUnrecognized = useMemo(
     () => bulkRows.filter((r) => !MARK_STATUS_OPTIONS.some((o) => o.toLowerCase() === r.status.toLowerCase())).length,
     [bulkRows]
@@ -189,7 +245,7 @@ export default function Dashboard({
   }, []);
 
   const allStudentsFlat = useMemo(() => {
-    const out: { admissionNo: string; name: string; courseCode: string; courseName: string; campus: string; gender: string; contacts: string; intakeYear: string; status: string }[] = [];
+    const out: { admissionNo: string; name: string; courseCode: string; courseName: string; campus: string; gender: string; contacts: string; intakeYear: string; graduationCohort: string; status: string }[] = [];
     for (const [status, list] of Object.entries(data.studentsByStatus)) {
       for (const s of list) out.push({ ...s, status });
     }
@@ -630,6 +686,7 @@ export default function Dashboard({
             {globalSearchOpen && globalQuery.trim() && (
               <GlobalSearchDropdown
                 results={globalResults}
+                termSlug={apiTermSlug}
                 onClose={() => setGlobalSearchOpen(false)}
               />
             )}
@@ -1011,7 +1068,7 @@ export default function Dashboard({
                   {conflicts.map((c, i) => (
                     <tr key={c.admissionNo + i} style={i % 2 ? styles.trOdd : undefined}>
                       <td style={styles.tdCode}>
-                        <Link href={`/students/${encodeURIComponent(c.admissionNo)}`} style={{ color: C.teal }}>
+                        <Link href={`/students/${encodeURIComponent(c.admissionNo)}?term=${apiTermSlug}`} style={{ color: C.teal }}>
                           {c.admissionNo}
                         </Link>
                       </td>
@@ -1165,7 +1222,7 @@ export default function Dashboard({
                         />
                       </td>
                       <td style={styles.tdCode}>
-                        <Link href={`/students/${encodeURIComponent(s.admissionNo)}`} style={{ color: C.teal }}>
+                        <Link href={`/students/${encodeURIComponent(s.admissionNo)}?term=${apiTermSlug}`} style={{ color: C.teal }}>
                           {s.admissionNo}
                         </Link>
                       </td>
@@ -1262,6 +1319,8 @@ export default function Dashboard({
           status={selectedStatus}
           students={studentPanelList}
           unmarkedStudents={unmarkedPanelList}
+          termSlug={apiTermSlug}
+          onOpenCohortTag={selectedStatus === "Graduated" ? () => setCohortTagOpen(true) : undefined}
           query={studentQuery}
           onQueryChange={setStudentQuery}
           onClose={() => {
@@ -1430,6 +1489,92 @@ export default function Dashboard({
           </div>
         </div>
       )}
+
+      {cohortTagOpen && (
+        <div style={modalStyles.overlay}>
+          <div style={{ ...modalStyles.box, width: 560 }}>
+            <h3 style={modalStyles.title}>Tag graduation cohort</h3>
+            {cohortTagResults ? (
+              <>
+                <p style={modalStyles.body}>
+                  {cohortTagResults.filter((r) => r.ok).length} of {cohortTagResults.length} tagged as {cohortTagYear}.
+                </p>
+                <div style={bulkTableWrap}>
+                  <table style={bulkTable}>
+                    <thead>
+                      <tr>
+                        <th style={bulkTh}>Admission No</th>
+                        <th style={bulkTh}>Result</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cohortTagResults.map((r, i) => (
+                        <tr key={r.admissionNo + i}>
+                          <td style={bulkTd}>{r.admissionNo}</td>
+                          <td style={{ ...bulkTd, color: r.ok ? C.sage : C.rose }}>
+                            {r.ok ? "Tagged" : r.reason === "not-found" ? "Admission number not found" : "Not currently Graduated — skipped"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={modalStyles.actions}>
+                  <button style={modalStyles.confirmBtn} onClick={closeCohortTagModal}>Done</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p style={modalStyles.body}>
+                  Paste admission numbers (one per line, or comma-separated) for students who
+                  graduated in the same year — this only annotates students already marked
+                  Graduated in some term; it never changes anyone's status, so it can't trip the
+                  terminal lock and needs no override. Anyone not currently Graduated is skipped
+                  and shown below so you can double-check the list.
+                </p>
+                <label style={modalStyles.label}>Admission numbers</label>
+                <textarea
+                  style={{ ...modalStyles.input, height: 140, fontFamily: "IBM Plex Mono, monospace", fontSize: 12.5 }}
+                  value={cohortTagText}
+                  onChange={(e) => setCohortTagText(e.target.value)}
+                  placeholder={"2023/12345\n2023/12346\n2023/12347"}
+                />
+                {cohortTagText.trim() && (
+                  <p style={{ fontSize: 12, color: C.slate, margin: "6px 0 0" }}>
+                    {cohortTagAdmissionNos.length} admission number{cohortTagAdmissionNos.length === 1 ? "" : "s"} parsed
+                  </p>
+                )}
+                <label style={modalStyles.label}>Cohort year</label>
+                <input
+                  style={modalStyles.input}
+                  value={cohortTagYear}
+                  onChange={(e) => setCohortTagYear(e.target.value)}
+                  placeholder="e.g. 2023"
+                />
+                <label style={modalStyles.label}>Resolve password</label>
+                <input
+                  type="password"
+                  style={modalStyles.input}
+                  value={cohortTagPassword}
+                  onChange={(e) => setCohortTagPassword(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleCohortTagSubmit(); }}
+                  placeholder="••••••••"
+                />
+                <div style={modalStyles.actions}>
+                  <button style={modalStyles.cancelBtn} onClick={closeCohortTagModal}>Cancel</button>
+                  <button
+                    style={modalStyles.confirmBtn}
+                    disabled={cohortTagBusy || cohortTagAdmissionNos.length === 0 || !cohortTagYear.trim() || !cohortTagPassword.trim()}
+                    onClick={handleCohortTagSubmit}
+                  >
+                    {cohortTagBusy ? "Tagging…" : `Tag ${cohortTagAdmissionNos.length} student${cohortTagAdmissionNos.length === 1 ? "" : "s"}`}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1500,9 +1645,11 @@ function SortableTh({
 
 function GlobalSearchDropdown({
   results,
+  termSlug,
   onClose,
 }: {
   results: { admissionNo: string; name: string; courseCode: string; courseName: string; campus: string; status: string }[];
+  termSlug: string;
   onClose: () => void;
 }) {
   return (
@@ -1518,7 +1665,7 @@ function GlobalSearchDropdown({
           {results.slice(0, 30).map((s, i) => (
             <Link
               key={s.admissionNo + i}
-              href={`/students/${encodeURIComponent(s.admissionNo)}`}
+              href={`/students/${encodeURIComponent(s.admissionNo)}?term=${termSlug}`}
               style={{ ...styles.globalRow, textDecoration: "none", color: "inherit" }}
             >
               <div>
@@ -1540,27 +1687,34 @@ function StudentListPanel({
   status,
   students,
   unmarkedStudents,
+  termSlug,
   query,
   onQueryChange,
   onClose,
+  onOpenCohortTag,
 }: {
   status: string;
-  students: { admissionNo: string; name: string; courseCode: string; courseName: string; campus: string; contacts: string }[];
+  students: { admissionNo: string; name: string; courseCode: string; courseName: string; campus: string; contacts: string; graduationCohort?: string }[];
   /** Unmarked students in the same current filter scope, for the "In Session"
    * reporting-rate denominator below. Empty/unused for every other status. */
   unmarkedStudents?: { courseCode: string }[];
+  termSlug: string;
   query: string;
   onQueryChange: (q: string) => void;
   onClose: () => void;
+  /** Opens the "Tag graduation cohort" tool — only ever passed/used when status is "Graduated". */
+  onOpenCohortTag?: () => void;
 }) {
   const [deptFilter, setDeptFilter] = useState<string | null>(null);
-  useEffect(() => { setDeptFilter(null); }, [status]);
+  const [cohortFilter, setCohortFilter] = useState<string | null>(null);
+  useEffect(() => { setDeptFilter(null); setCohortFilter(null); }, [status]);
 
   // Only "In Session" gets the reporting-rate treatment: department count
   // measured against (that department's In Session + still-Unmarked) —
   // i.e. how far each department has gotten through reporting, rather
   // than that department's share of everyone who has reported so far.
   const isReportingRate = status === "In Session" && !!unmarkedStudents;
+  const isGraduatedPanel = status === "Graduated";
 
   const byDept = useMemo(() => {
     const counts = new Map<string, number>();
@@ -1595,10 +1749,29 @@ function StudentListPanel({
   const totalExpected = students.length + (unmarkedStudents?.length ?? 0);
   const totalPct = totalExpected ? Math.round((students.length / totalExpected) * 100) : 0;
 
-  const displayedStudents = useMemo(
-    () => (deptFilter ? students.filter((s) => getDepartment(s.courseCode) === deptFilter) : students),
-    [students, deptFilter]
-  );
+  // Cohort breakdown, Graduated only — "Untagged" catches anyone graduated
+  // before the cohort column existed (or backfilled yet), sorted to the
+  // end so the real cohort years read top-to-bottom, most recent first.
+  const byCohort = useMemo(() => {
+    if (!isGraduatedPanel) return [];
+    const counts = new Map<string, number>();
+    for (const s of students) {
+      const c = (s.graduationCohort ?? "").trim() || "Untagged";
+      counts.set(c, (counts.get(c) ?? 0) + 1);
+    }
+    return Array.from(counts.entries()).sort((a, b) => {
+      if (a[0] === "Untagged") return 1;
+      if (b[0] === "Untagged") return -1;
+      return b[0].localeCompare(a[0]);
+    });
+  }, [isGraduatedPanel, students]);
+
+  const displayedStudents = useMemo(() => {
+    let rows = students;
+    if (deptFilter) rows = rows.filter((s) => getDepartment(s.courseCode) === deptFilter);
+    if (cohortFilter) rows = rows.filter((s) => ((s.graduationCohort ?? "").trim() || "Untagged") === cohortFilter);
+    return rows;
+  }, [students, deptFilter, cohortFilter]);
 
   return (
     <div style={panelStyles.overlay} onClick={onClose}>
@@ -1664,10 +1837,46 @@ function StudentListPanel({
             )}
           </div>
         )}
+        {isGraduatedPanel && byCohort.length > 0 && (
+          <div style={panelStyles.deptBreakdown}>
+            <div style={panelStyles.deptBreakdownTitle}>
+              Breakdown by graduation cohort {cohortFilter && <button style={panelStyles.deptClear} onClick={() => setCohortFilter(null)}>clear filter ✕</button>}
+            </div>
+            {byCohort.map(([cohort, count]) => {
+              const pct = students.length ? Math.round((count / students.length) * 100) : 0;
+              const active = cohortFilter === cohort;
+              return (
+                <div
+                  key={cohort}
+                  onClick={() => setCohortFilter(active ? null : cohort)}
+                  style={{ ...panelStyles.deptRow, opacity: cohortFilter && !active ? 0.45 : 1 }}
+                  title="Click to filter the list below to this cohort"
+                >
+                  <div style={{ ...panelStyles.deptLabel, fontWeight: active ? 700 : 500 }}>
+                    {cohort === "Untagged" ? "Untagged (no cohort year set)" : cohort}
+                  </div>
+                  <div style={panelStyles.deptBarTrack}>
+                    <div style={{ ...panelStyles.deptBarFill, width: `${pct}%`, background: active ? C.rose : cohort === "Untagged" ? C.slate : C.teal }} />
+                  </div>
+                  <div style={panelStyles.deptFigures}>{count} · {pct}%</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {isGraduatedPanel && onOpenCohortTag && (
+          <div style={panelStyles.cohortTagBar}>
+            <span style={{ fontSize: 12, color: C.slate }}>
+              Backfilling an older cohort, or fixing a wrong year? Tag a batch by admission number.
+            </span>
+            <button style={panelStyles.cohortTagBtn} onClick={onOpenCohortTag}>Tag graduation cohort…</button>
+          </div>
+        )}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
           <div style={panelStyles.count}>
             {fmt(displayedStudents.length)} student{displayedStudents.length === 1 ? "" : "s"}
             {deptFilter ? ` in ${deptFilter}` : ""}
+            {cohortFilter ? ` · cohort ${cohortFilter}` : ""}
           </div>
           {displayedStudents.length > 0 && (
             <button
@@ -1701,7 +1910,7 @@ function StudentListPanel({
               {displayedStudents.map((s, i) => (
                 <tr key={s.admissionNo + i} style={i % 2 ? panelStyles.trOdd : undefined}>
                   <td style={panelStyles.tdCode}>
-                    <Link href={`/students/${encodeURIComponent(s.admissionNo)}`} style={{ color: C.teal }}>
+                    <Link href={`/students/${encodeURIComponent(s.admissionNo)}?term=${termSlug}`} style={{ color: C.teal }}>
                       {s.admissionNo}
                     </Link>
                   </td>
@@ -1741,6 +1950,8 @@ const panelStyles: Record<string, React.CSSProperties> = {
   deptClear: { border: "none", background: "transparent", color: C.teal, fontSize: 10.5, cursor: "pointer", fontFamily: "IBM Plex Mono, monospace", padding: 0, textTransform: "none", letterSpacing: 0 },
   deptRow: { display: "grid", gridTemplateColumns: "1fr 90px 70px", alignItems: "center", gap: 8, padding: "3px 0", cursor: "pointer" },
   deptTotalRow: { display: "grid", gridTemplateColumns: "1fr 90px 70px", alignItems: "center", gap: 8, padding: "6px 0 2px", marginTop: 4, borderTop: `1px solid ${C.line}` },
+  cohortTagBar: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, border: `1px dashed ${C.line}`, borderRadius: 8, padding: "10px 12px", marginBottom: 14, flexWrap: "wrap" },
+  cohortTagBtn: { border: `1px solid ${C.teal}`, background: "#fff", color: C.teal, borderRadius: 6, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" },
   deptLabel: { fontSize: 11.5, color: C.ink },
   deptBarTrack: { background: "#fff", borderRadius: 4, height: 10, overflow: "hidden", border: `1px solid ${C.line}` },
   deptBarFill: { height: "100%", borderRadius: 4 },

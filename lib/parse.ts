@@ -1,5 +1,10 @@
 export type Campus = "MAIN" | "NAKURU";
 
+import { columnIndex } from "./columns";
+import { GRADUATION_COHORT_COLUMN } from "./graduationCohort";
+
+const GRADUATION_COHORT_COL_INDEX = columnIndex(GRADUATION_COHORT_COLUMN);
+
 export type RawFlags = {
   graduation: boolean;
   reported: boolean;
@@ -20,6 +25,11 @@ export type Student = {
   contacts: string;
   intakeYear: string;
   campus: Campus;
+  /** Year the student graduated, from the standalone Graduation Cohort
+   * column — blank for anyone who hasn't graduated (or graduated before
+   * this column existed and hasn't been backfilled yet). See
+   * lib/graduationCohort.ts for the column this is read from. */
+  graduationCohort: string;
   flagsJanApr: RawFlags;
   flagsMayAug: RawFlags;
 };
@@ -101,6 +111,7 @@ export function toReconcilable(
     contacts: s.contacts,
     intakeYear: s.intakeYear,
     campus: s.campus,
+    graduationCohort: s.graduationCohort,
     flags: s[block],
   }));
 }
@@ -121,6 +132,7 @@ export function parseCampusRows(rows: any[][], campus: Campus): Student[] {
       contacts: String(row[layout.contacts] ?? "").trim(),
       intakeYear: layout.intake !== undefined ? String(row[layout.intake] ?? "").trim() : "",
       campus,
+      graduationCohort: String(row[GRADUATION_COHORT_COL_INDEX] ?? "").trim(),
       flagsJanApr: readFlags(row, layout.janApr),
       flagsMayAug: readFlags(row, layout.mayAug),
     });

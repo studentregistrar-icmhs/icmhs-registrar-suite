@@ -48,6 +48,7 @@ export function inheritedTerminalFlags(mayAug: RawFlags, janApr: RawFlags): RawF
 type Roster = {
   admissionNo: string; name: string; courseCode: string; courseName: string;
   gender: string; contacts: string; intakeYear: string; campus: "MAIN" | "NAKURU";
+  graduationCohort: string;
   flagsJanApr: RawFlags; flagsMayAug: RawFlags;
 }[];
 
@@ -80,6 +81,7 @@ export function buildFromStatusLog(
     contacts: r.contacts,
     intakeYear: r.intakeYear,
     campus: r.campus,
+    graduationCohort: r.graduationCohort,
     flags:
       inheritedTerminalFlags(r.flagsMayAug, r.flagsJanApr) ??
       flagsFromLabel(latestStatusByAdmission.get(r.admissionNo) ?? ""),
@@ -123,6 +125,7 @@ export function buildFromColumn(
     contacts: r.contacts,
     intakeYear: r.intakeYear,
     campus: r.campus,
+    graduationCohort: r.graduationCohort,
     flags:
       inheritedTerminalFlags(r.flagsMayAug, r.flagsJanApr) ??
       flagsFromLabel(statusByAdmission.get(r.admissionNo) ?? ""),

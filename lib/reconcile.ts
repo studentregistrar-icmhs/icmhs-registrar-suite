@@ -15,6 +15,8 @@ export type ReconcilableStudent = {
   contacts: string;
   intakeYear: string;
   campus: "MAIN" | "NAKURU";
+  /** See lib/graduationCohort.ts — blank for non-graduates. */
+  graduationCohort: string;
   flags: RawFlags;
 };
 

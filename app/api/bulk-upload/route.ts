@@ -12,8 +12,10 @@ export async function POST(req: NextRequest) {
     rows?: { admissionNo?: string; status?: string }[];
     override?: boolean;
     password?: string;
+    validityDate?: string;
+    graduationCohort?: string;
   };
-  const { termSlug, rows, override, password } = body;
+  const { termSlug, rows, override, password, validityDate, graduationCohort } = body;
 
   if (!termSlug || !Array.isArray(rows) || rows.length === 0) {
     return NextResponse.json({ ok: false, reason: "invalid-status" }, { status: 400 });
@@ -29,7 +31,13 @@ export async function POST(req: NextRequest) {
     .map((r) => ({ admissionNo: String(r.admissionNo ?? "").trim(), status: String(r.status ?? "").trim() }))
     .filter((r) => r.admissionNo !== "");
 
-  const result = await bulkUploadStatuses(termSlug, cleanRows, !!override);
+  const result = await bulkUploadStatuses(
+    termSlug,
+    cleanRows,
+    !!override,
+    validityDate?.trim() || undefined,
+    graduationCohort?.trim() || undefined
+  );
 
   if (result.ok) {
     revalidatePath(`/terms/${termSlug}`);
