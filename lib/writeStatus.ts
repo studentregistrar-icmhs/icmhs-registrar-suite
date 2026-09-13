@@ -622,6 +622,11 @@ export async function bulkMarkUnmarked(
  * it never trips the terminal lock and never needs an override — the point
  * is precisely to annotate a student who is already (and stays) Graduated.
  *
+ * Takes the year per-row (not one year for the whole batch) so a single
+ * upload can mix cohorts — e.g. an Excel export with an admission-number
+ * column and a year column side by side, one row per student, however
+ * many different years appear in it.
+ *
  * Each admission number is required to currently resolve to Graduated
  * specifically (not just any terminal status) before being tagged — checked
  * across live-legacy flags, every live-column term, and the retired Status
@@ -633,15 +638,12 @@ export async function bulkMarkUnmarked(
  * names at once (a full cohort list).
  */
 export type CohortTagOutcome =
-  | { admissionNo: string; ok: true }
-  | { admissionNo: string; ok: false; reason: "not-found" | "not-graduated" };
+  | { admissionNo: string; cohortYear: string; ok: true }
+  | { admissionNo: string; cohortYear: string; ok: false; reason: "not-found" | "not-graduated" | "missing-year" };
 
 export async function bulkTagGraduationCohort(
-  admissionNos: string[],
-  cohortYear: string
+  rows: { admissionNo: string; cohortYear: string }[]
 ): Promise<{ ok: true; results: CohortTagOutcome[] }> {
-  const year = cohortYear.trim();
-
   const [mainRows, nakuruRows, logRows] = await Promise.all([
     fetchSheetRows("MAIN CAMPUS!A:AD"),
     fetchSheetRows("NAKURU CAMPUS!A:AD"),
@@ -690,23 +692,28 @@ export async function bulkTagGraduationCohort(
   const updates: { range: string; values: any[] }[] = [];
   const seen = new Set<string>();
 
-  for (const admissionNoRaw of admissionNos) {
-    const admissionNo = admissionNoRaw.trim();
+  for (const rowRaw of rows) {
+    const admissionNo = rowRaw.admissionNo.trim();
+    const cohortYear = rowRaw.cohortYear.trim();
     if (!admissionNo || seen.has(admissionNo)) continue;
     seen.add(admissionNo);
 
+    if (!cohortYear) {
+      results.push({ admissionNo, cohortYear, ok: false, reason: "missing-year" });
+      continue;
+    }
     const loc = byAdmission.get(admissionNo);
     if (!loc) {
-      results.push({ admissionNo, ok: false, reason: "not-found" });
+      results.push({ admissionNo, cohortYear, ok: false, reason: "not-found" });
       continue;
     }
     if (!isGraduated(loc, admissionNo)) {
-      results.push({ admissionNo, ok: false, reason: "not-graduated" });
+      results.push({ admissionNo, cohortYear, ok: false, reason: "not-graduated" });
       continue;
     }
     const tabName = loc.campus === "MAIN" ? "MAIN CAMPUS" : "NAKURU CAMPUS";
-    updates.push({ range: `${tabName}!${GRADUATION_COHORT_COLUMN}${loc.row}`, values: [year] });
-    results.push({ admissionNo, ok: true });
+    updates.push({ range: `${tabName}!${GRADUATION_COHORT_COLUMN}${loc.row}`, values: [cohortYear] });
+    results.push({ admissionNo, cohortYear, ok: true });
   }
 
   if (updates.length > 0) {

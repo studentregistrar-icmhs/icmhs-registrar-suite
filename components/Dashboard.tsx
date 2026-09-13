@@ -102,43 +102,66 @@ export default function Dashboard({
   >(null);
 
   const [cohortTagOpen, setCohortTagOpen] = useState(false);
-  const [cohortTagText, setCohortTagText] = useState("");
-  const [cohortTagYear, setCohortTagYear] = useState("");
+  const [cohortTagFileName, setCohortTagFileName] = useState("");
+  const [cohortTagRows, setCohortTagRows] = useState<{ admissionNo: string; cohortYear: string }[]>([]);
+  const [cohortTagParsing, setCohortTagParsing] = useState(false);
+  const [cohortTagParseError, setCohortTagParseError] = useState<string | null>(null);
   const [cohortTagPassword, setCohortTagPassword] = useState("");
   const [cohortTagBusy, setCohortTagBusy] = useState(false);
   const [cohortTagResults, setCohortTagResults] = useState<
-    { admissionNo: string; ok: boolean; reason?: string }[] | null
+    { admissionNo: string; cohortYear: string; ok: boolean; reason?: string }[] | null
   >(null);
-
-  const cohortTagAdmissionNos = useMemo(
-    () =>
-      cohortTagText
-        .split(/[\n,]+/)
-        .map((s) => s.trim())
-        .filter(Boolean),
-    [cohortTagText]
-  );
 
   function closeCohortTagModal() {
     setCohortTagOpen(false);
-    setCohortTagText("");
-    setCohortTagYear("");
+    setCohortTagFileName("");
+    setCohortTagRows([]);
+    setCohortTagParseError(null);
     setCohortTagPassword("");
     setCohortTagResults(null);
   }
 
+  function downloadCohortTagTemplate() {
+    downloadCsv(
+      "graduation-cohort-template.csv",
+      toCsv(["Admission Number", "Cohort Year"], [["2023/12345", "2023"], ["2023/12346", "2023"]])
+    );
+  }
+
+  async function handleCohortTagFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCohortTagFileName(file.name);
+    setCohortTagResults(null);
+    setCohortTagParseError(null);
+    setCohortTagRows([]);
+    setCohortTagParsing(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/students/graduation-cohort/parse-file", { method: "POST", body: formData });
+      const json = await res.json();
+      if (json.ok) {
+        setCohortTagRows(json.rows);
+      } else {
+        setCohortTagParseError(json.reason ?? "Couldn't read that file");
+      }
+    } catch {
+      setCohortTagParseError("Couldn't read that file");
+    } finally {
+      setCohortTagParsing(false);
+      e.target.value = ""; // allow re-selecting the same file after fixing it
+    }
+  }
+
   async function handleCohortTagSubmit() {
-    if (cohortTagAdmissionNos.length === 0 || !cohortTagYear.trim() || !cohortTagPassword.trim()) return;
+    if (cohortTagRows.length === 0 || !cohortTagPassword.trim()) return;
     setCohortTagBusy(true);
     try {
       const res = await fetch("/api/students/graduation-cohort/mark-bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          admissionNos: cohortTagAdmissionNos,
-          cohortYear: cohortTagYear.trim(),
-          password: cohortTagPassword,
-        }),
+        body: JSON.stringify({ rows: cohortTagRows, password: cohortTagPassword }),
       });
       const json = await res.json();
       if (res.status === 401) {
@@ -1497,13 +1520,14 @@ export default function Dashboard({
             {cohortTagResults ? (
               <>
                 <p style={modalStyles.body}>
-                  {cohortTagResults.filter((r) => r.ok).length} of {cohortTagResults.length} tagged as {cohortTagYear}.
+                  {cohortTagResults.filter((r) => r.ok).length} of {cohortTagResults.length} tagged.
                 </p>
                 <div style={bulkTableWrap}>
                   <table style={bulkTable}>
                     <thead>
                       <tr>
                         <th style={bulkTh}>Admission No</th>
+                        <th style={bulkTh}>Year</th>
                         <th style={bulkTh}>Result</th>
                       </tr>
                     </thead>
@@ -1511,8 +1535,15 @@ export default function Dashboard({
                       {cohortTagResults.map((r, i) => (
                         <tr key={r.admissionNo + i}>
                           <td style={bulkTd}>{r.admissionNo}</td>
+                          <td style={bulkTd}>{r.cohortYear}</td>
                           <td style={{ ...bulkTd, color: r.ok ? C.sage : C.rose }}>
-                            {r.ok ? "Tagged" : r.reason === "not-found" ? "Admission number not found" : "Not currently Graduated — skipped"}
+                            {r.ok
+                              ? "Tagged"
+                              : r.reason === "not-found"
+                              ? "Admission number not found"
+                              : r.reason === "missing-year"
+                              ? "No year given — skipped"
+                              : "Not currently Graduated — skipped"}
                           </td>
                         </tr>
                       ))}
@@ -1526,31 +1557,44 @@ export default function Dashboard({
             ) : (
               <>
                 <p style={modalStyles.body}>
-                  Paste admission numbers (one per line, or comma-separated) for students who
-                  graduated in the same year — this only annotates students already marked
-                  Graduated in some term; it never changes anyone's status, so it can't trip the
-                  terminal lock and needs no override. Anyone not currently Graduated is skipped
-                  and shown below so you can double-check the list.
+                  Upload a .csv or .xlsx with an admission number in the first column and the
+                  cohort year in the second — one row per student, however many different years
+                  the file has. This only annotates students already marked Graduated in some
+                  term; it never changes anyone's status, so it can't trip the terminal lock and
+                  needs no override. Anyone not currently Graduated is skipped and shown after
+                  upload so you can double-check the list.
                 </p>
-                <label style={modalStyles.label}>Admission numbers</label>
-                <textarea
-                  style={{ ...modalStyles.input, height: 140, fontFamily: "IBM Plex Mono, monospace", fontSize: 12.5 }}
-                  value={cohortTagText}
-                  onChange={(e) => setCohortTagText(e.target.value)}
-                  placeholder={"2023/12345\n2023/12346\n2023/12347"}
-                />
-                {cohortTagText.trim() && (
-                  <p style={{ fontSize: 12, color: C.slate, margin: "6px 0 0" }}>
-                    {cohortTagAdmissionNos.length} admission number{cohortTagAdmissionNos.length === 1 ? "" : "s"} parsed
-                  </p>
+                <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
+                  <input type="file" accept=".csv,.xlsx,.xlsm" onChange={handleCohortTagFile} style={{ fontSize: 13 }} />
+                  <button style={bulkTemplateBtn} onClick={downloadCohortTagTemplate}>Download template</button>
+                </div>
+                {cohortTagParsing && <p style={{ fontSize: 12, color: C.slate }}>Reading {cohortTagFileName}…</p>}
+                {cohortTagParseError && <p style={{ fontSize: 12, color: C.rose }}>{cohortTagParseError}</p>}
+                {cohortTagRows.length > 0 && (
+                  <>
+                    <p style={{ fontSize: 12, color: C.slate, margin: "0 0 8px" }}>
+                      {cohortTagRows.length} row{cohortTagRows.length === 1 ? "" : "s"} parsed from {cohortTagFileName}
+                    </p>
+                    <div style={bulkTableWrap}>
+                      <table style={bulkTable}>
+                        <thead>
+                          <tr>
+                            <th style={bulkTh}>Admission No</th>
+                            <th style={bulkTh}>Year</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {cohortTagRows.slice(0, 200).map((r, i) => (
+                            <tr key={r.admissionNo + i}>
+                              <td style={bulkTd}>{r.admissionNo}</td>
+                              <td style={bulkTd}>{r.cohortYear || <span style={{ color: C.rose }}>missing</span>}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
                 )}
-                <label style={modalStyles.label}>Cohort year</label>
-                <input
-                  style={modalStyles.input}
-                  value={cohortTagYear}
-                  onChange={(e) => setCohortTagYear(e.target.value)}
-                  placeholder="e.g. 2023"
-                />
                 <label style={modalStyles.label}>Resolve password</label>
                 <input
                   type="password"
@@ -1564,10 +1608,10 @@ export default function Dashboard({
                   <button style={modalStyles.cancelBtn} onClick={closeCohortTagModal}>Cancel</button>
                   <button
                     style={modalStyles.confirmBtn}
-                    disabled={cohortTagBusy || cohortTagAdmissionNos.length === 0 || !cohortTagYear.trim() || !cohortTagPassword.trim()}
+                    disabled={cohortTagBusy || cohortTagRows.length === 0 || !cohortTagPassword.trim()}
                     onClick={handleCohortTagSubmit}
                   >
-                    {cohortTagBusy ? "Tagging…" : `Tag ${cohortTagAdmissionNos.length} student${cohortTagAdmissionNos.length === 1 ? "" : "s"}`}
+                    {cohortTagBusy ? "Tagging…" : `Tag ${cohortTagRows.length} student${cohortTagRows.length === 1 ? "" : "s"}`}
                   </button>
                 </div>
               </>
