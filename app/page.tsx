@@ -2,24 +2,32 @@ import Link from "next/link";
 import { TERMS, getCurrentTermSlug } from "@/lib/terms";
 import { loadTermData } from "@/lib/loadTermData";
 import TermStatusPie from "@/components/TermStatusPie";
+import { getCurrentUser, isAdmin } from "@/lib/auth/currentUser";
+import UserMenu from "@/components/UserMenu";
 
 export const revalidate = Number(process.env.REVALIDATE_SECONDS ?? 120);
 
 export default async function Home() {
+  const me = getCurrentUser();
+  const campusFilter = me && me.campusScope !== "ALL" ? me.campusScope : undefined;
   const currentTermSlug = getCurrentTermSlug();
   const results = await Promise.all(
-    TERMS.map(async (t) => ({ term: t, data: await loadTermData(t.slug) }))
+    TERMS.map(async (t) => ({ term: t, data: await loadTermData(t.slug, campusFilter) }))
   );
 
   return (
     <div style={styles.page}>
-      <div style={styles.eyebrow}>ICMHS · REGISTRAR'S OFFICE</div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div style={styles.eyebrow}>ICMHS · REGISTRAR'S OFFICE</div>
+        {me && <UserMenu displayName={me.displayName} role={me.role} campusScope={me.campusScope} />}
+      </div>
       <h1 style={styles.h1}>Student Population Tracker</h1>
       <p style={styles.sub}>Choose a term to view its dashboard.</p>
       <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
         <Link href="/students" style={styles.studentSearchLink}>🔍 Find a student</Link>
         <Link href="/deferments/admin" style={styles.studentSearchLink}>📄 Deferment Registrar Review</Link>
         <Link href="/reports" style={styles.studentSearchLink}>📊 Reports</Link>
+        {me && isAdmin(me) && <Link href="/admin/users" style={styles.studentSearchLink}>👤 Manage accounts</Link>}
       </div>
       <div style={styles.grid}>
         {results.map(({ term: t, data }) => {

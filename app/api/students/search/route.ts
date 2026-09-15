@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchSheetRows } from "@/lib/googleSheets";
 import { parseCampusRows } from "@/lib/parse";
+import { getCurrentUserFromRequest, canAccessCampus } from "@/lib/auth/currentUser";
 
 export async function GET(req: NextRequest) {
+  const me = getCurrentUserFromRequest(req);
+  if (!me) return NextResponse.json({ error: "Not logged in" }, { status: 401 });
+
   const q = req.nextUrl.searchParams.get("q")?.trim().toLowerCase() ?? "";
   if (q.length < 2) return NextResponse.json({ results: [] });
 
   const [mainRows, nakuruRows] = await Promise.all([
-    fetchSheetRows("MAIN CAMPUS!A:Z"),
-    fetchSheetRows("NAKURU CAMPUS!A:X"),
+    fetchSheetRows("MAIN CAMPUS!A:AD"),
+    fetchSheetRows("NAKURU CAMPUS!A:AD"),
   ]);
   const students = [
     ...parseCampusRows(mainRows, "MAIN"),
@@ -18,7 +22,8 @@ export async function GET(req: NextRequest) {
   const results = students
     .filter(
       (s) =>
-        s.admissionNo.toLowerCase().includes(q) || s.name.toLowerCase().includes(q)
+        (s.admissionNo.toLowerCase().includes(q) || s.name.toLowerCase().includes(q)) &&
+        canAccessCampus(me, s.campus)
     )
     .slice(0, 25)
     .map((s) => ({

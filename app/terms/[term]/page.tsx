@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Dashboard from "@/components/Dashboard";
 import { getTerm, getPreviousTerm, TERMS } from "@/lib/terms";
 import { loadTermData } from "@/lib/loadTermData";
+import { getCurrentUser } from "@/lib/auth/currentUser";
 
 export const revalidate = Number(process.env.REVALIDATE_SECONDS ?? 120);
 
@@ -14,10 +15,14 @@ export default async function TermPage({ params }: { params: { term: string } })
   const term = getTerm(params.term);
   if (!term) notFound();
 
+  const me = getCurrentUser();
+  if (!me) redirect("/login"); // shouldn't happen — middleware already guards this route — but keeps this page honest on its own
+  const campusFilter = me.campusScope !== "ALL" ? me.campusScope : undefined;
+
   const previousTerm = getPreviousTerm(params.term);
   const [data, previousData] = await Promise.all([
-    loadTermData(params.term),
-    previousTerm ? loadTermData(previousTerm.slug) : Promise.resolve(null),
+    loadTermData(params.term, campusFilter),
+    previousTerm ? loadTermData(previousTerm.slug, campusFilter) : Promise.resolve(null),
   ]);
   if (!data) notFound();
 
@@ -47,6 +52,7 @@ export default async function TermPage({ params }: { params: { term: string } })
       apiTermSlug={params.term}
       previousTermLabel={previousTerm?.label}
       previousData={previousData && !previousData.error ? previousData.dashboard : null}
+      me={me}
     />
   );
 }

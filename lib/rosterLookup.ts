@@ -32,3 +32,24 @@ export async function findStudentRow(admissionNo: string): Promise<RowLocation |
   }
   return null;
 }
+
+/**
+ * Bulk campus lookup for a list of admission numbers — one fetch per
+ * campus tab regardless of list size, rather than one findStudentRow
+ * round-trip per student. Used to enforce campus-scoped permissions on
+ * batch write routes (e.g. bulk-marking several Unmarked students at
+ * once) without an expensive per-student lookup.
+ */
+export async function campusForAdmissionNumbers(admissionNos: string[]): Promise<Map<string, Campus>> {
+  const wanted = new Set(admissionNos);
+  const result = new Map<string, Campus>();
+  for (const tab of TABS) {
+    const rows = await fetchSheetRows(tab.range);
+    for (let i = 2; i < rows.length; i++) {
+      const row = rows[i];
+      const adm = row ? String(row[tab.admissionCol]) : "";
+      if (adm && wanted.has(adm)) result.set(adm, tab.campus);
+    }
+  }
+  return result;
+}

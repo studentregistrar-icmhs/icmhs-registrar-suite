@@ -1,16 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { markUnmarkedStudent } from "@/lib/writeStatus";
+import { findStudentRow } from "@/lib/rosterLookup";
+import { getCurrentUserFromRequest, canEdit, canAccessCampus } from "@/lib/auth/currentUser";
 
-// No resolve-password gate here for now (removed on request) — still
-// protected by middleware.ts (Basic Auth) like every other registrar route,
-// and every write is still logged to RESOLVE LOG with who did it.
 export async function POST(req: NextRequest) {
-  const { admissionNo, termSlug, status, markedBy, validityDate, graduationCohort } = (await req.json()) as {
+  const me = getCurrentUserFromRequest(req);
+  if (!me || !canEdit(me)) {
+    return NextResponse.json({ ok: false, reason: "You don't have permission to edit student statuses." }, { status: 403 });
+  }
+
+  const { admissionNo, termSlug, status, validityDate, graduationCohort } = (await req.json()) as {
     admissionNo: string;
     termSlug: string;
     status?: string;
-    markedBy?: string;
     validityDate?: string;
     graduationCohort?: string;
   };
@@ -19,12 +22,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, reason: "invalid-status" }, { status: 400 });
   }
 
-  const name = (markedBy || "").trim() || "Unknown";
+  const loc = await findStudentRow(admissionNo);
+  if (!loc) return NextResponse.json({ ok: false, reason: "not-found" }, { status: 404 });
+  if (!canAccessCampus(me, loc.campus)) {
+    return NextResponse.json({ ok: false, reason: "That student is outside your assigned campus." }, { status: 403 });
+  }
+
   const result = await markUnmarkedStudent(
     admissionNo,
     termSlug,
     status,
-    name,
+    me.displayName,
     validityDate?.trim() || undefined,
     graduationCohort?.trim() || undefined
   );

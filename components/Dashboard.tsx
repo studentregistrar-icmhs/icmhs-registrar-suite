@@ -11,6 +11,7 @@ import type { ConflictRow } from "@/lib/reconcile";
 import { toCsv, downloadCsv, parseCsv } from "@/lib/csv";
 import { getDepartment } from "@/lib/departments";
 import { parseIntake } from "@/lib/intake";
+import UserMenu from "@/components/UserMenu";
 
 const C = {
   ink: "#122A28", bg: "#EEF1EA", card: "#FFFFFF", line: "#D9DFD3",
@@ -62,12 +63,13 @@ type Props = {
   apiTermSlug: string;
   previousTermLabel?: string;
   previousData?: DashboardData | null;
+  me: { role: "admin" | "editor" | "viewer"; campusScope: "ALL" | "MAIN" | "NAKURU"; displayName: string };
 };
 
 const AUTO_REFRESH_MS = 3 * 60 * 1000;
 
 export default function Dashboard({
-  initialData, initialConflicts, termLabel, isLive, canCarryForward, isColumnTerm, apiTermSlug, previousTermLabel, previousData,
+  initialData, initialConflicts, termLabel, isLive, canCarryForward, isColumnTerm, apiTermSlug, previousTermLabel, previousData, me,
 }: Props) {
   const [data, setData] = useState(initialData);
   const [conflicts, setConflicts] = useState(initialConflicts);
@@ -697,7 +699,8 @@ export default function Dashboard({
               : `Static snapshot from an uploaded workbook · generated ${new Date(data.generatedAt).toLocaleDateString()}`}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+          <UserMenu displayName={me.displayName} role={me.role} campusScope={me.campusScope} />
           <div style={{ position: "relative" }}>
             <input
               value={globalQuery}
@@ -754,7 +757,7 @@ export default function Dashboard({
               Clear filters
             </button>
           )}
-          {canCarryForward && (
+          {canCarryForward && me.role === "admin" && (
             <button
               disabled={carryingForward}
               onClick={() => setPendingResolve({ type: "carry-forward" })}
@@ -763,7 +766,7 @@ export default function Dashboard({
               {carryingForward ? "Carrying forward…" : "Carry forward Graduated/Dropped/Completed"}
             </button>
           )}
-          {isColumnTerm && (
+          {isColumnTerm && me.role === "admin" && (
             <button onClick={() => { setBulkName(resolverName); setBulkOpen(true); }} style={styles.syncBtn}>
               Bulk upload statuses
             </button>
@@ -1053,7 +1056,7 @@ export default function Dashboard({
             </div>
             {conflicts.length > 0 && <button onClick={exportConflicts} style={styles.exportBtn}>Export CSV</button>}
           </div>
-          {conflictsByCategory.length > 0 && (
+          {conflictsByCategory.length > 0 && me.role === "admin" && (
             <div style={styles.bulkRow}>
               <span style={styles.bulkRowLabel}>Resolve all:</span>
               {conflictsByCategory.map(([category, count]) => (
@@ -1102,13 +1105,17 @@ export default function Dashboard({
                       <td style={{ ...styles.tdName, color: C.rose }}>{c.setStatuses.join(", ")}</td>
                       <td style={{ ...styles.tdName, fontWeight: 600 }}>{c.resolvedTo}</td>
                       <td style={styles.tdNum}>
-                        <button
-                          style={styles.resolveBtn}
-                          disabled={resolvingId === c.admissionNo}
-                          onClick={() => setPendingResolve({ type: "single", admissionNo: c.admissionNo })}
-                        >
-                          {resolvingId === c.admissionNo ? "Resolving…" : "Resolve"}
-                        </button>
+                        {me.role === "admin" ? (
+                          <button
+                            style={styles.resolveBtn}
+                            disabled={resolvingId === c.admissionNo}
+                            onClick={() => setPendingResolve({ type: "single", admissionNo: c.admissionNo })}
+                          >
+                            {resolvingId === c.admissionNo ? "Resolving…" : "Resolve"}
+                          </button>
+                        ) : (
+                          <span style={{ color: C.slate, fontSize: 12 }}>Admin only</span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -1150,7 +1157,7 @@ export default function Dashboard({
               {unmarked.length > 0 && <button onClick={exportUnmarked} style={styles.exportBtn}>Export CSV</button>}
             </div>
           </div>
-          {unmarked.length > 0 && (
+          {unmarked.length > 0 && me.role !== "viewer" && (
             <div style={styles.bulkMarkBar}>
               <span style={{ fontSize: 12.5, color: C.slate }}>
                 {selectedUnmarked.size > 0 ? `${selectedUnmarked.size} selected` : "Select students below to set several at once"}
@@ -1253,6 +1260,9 @@ export default function Dashboard({
                       <td style={styles.tdNum}>{s.campus}</td>
                       <td style={styles.tdName}>{s.courseName || s.courseCode}</td>
                       <td style={styles.tdNum}>
+                        {me.role === "viewer" ? (
+                          <span style={{ color: C.slate, fontSize: 12 }}>View only</span>
+                        ) : (
                         <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "flex-end" }}>
                           <select
                             style={styles.markSelect}
@@ -1310,6 +1320,7 @@ export default function Dashboard({
                             {markingId === s.admissionNo ? "Setting…" : "Set"}
                           </button>
                         </div>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -1343,7 +1354,7 @@ export default function Dashboard({
           students={studentPanelList}
           unmarkedStudents={unmarkedPanelList}
           termSlug={apiTermSlug}
-          onOpenCohortTag={selectedStatus === "Graduated" ? () => setCohortTagOpen(true) : undefined}
+          onOpenCohortTag={selectedStatus === "Graduated" && me.role === "admin" ? () => setCohortTagOpen(true) : undefined}
           query={studentQuery}
           onQueryChange={setStudentQuery}
           onClose={() => {

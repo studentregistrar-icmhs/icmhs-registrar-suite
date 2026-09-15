@@ -43,7 +43,7 @@ const EMPTY_DASHBOARD: DashboardData = {
   conflictCount: 0,
 };
 
-export async function loadTermData(slug: string): Promise<TermData | null> {
+export async function loadTermData(slug: string, campusFilter?: "MAIN" | "NAKURU"): Promise<TermData | null> {
   const term = getTerm(slug);
   if (!term) return null;
 
@@ -60,6 +60,15 @@ export async function loadTermData(slug: string): Promise<TermData | null> {
     return students.filter((s) => !isFutureIntake(s.intakeYear, period));
   }
 
+  // Campus-scoped accounts (see lib/auth) never see the other campus's
+  // data at all — not filtered client-side, filtered here, before the KPIs,
+  // department breakdown, and conflict report are even computed, so every
+  // number a scoped user sees is already correct for just their campus
+  // rather than a full combined figure with the UI just hiding a toggle.
+  function scopeToCampus<T extends { campus: "MAIN" | "NAKURU" }>(rows: T[]): T[] {
+    return campusFilter ? rows.filter((r) => r.campus === campusFilter) : rows;
+  }
+
   try {
     if (term.source.kind === "live-legacy") {
       const [mainRows, nakuruRows] = await Promise.all([
@@ -70,7 +79,7 @@ export async function loadTermData(slug: string): Promise<TermData | null> {
         ...parseCampusRows(mainRows, "MAIN"),
         ...parseCampusRows(nakuruRows, "NAKURU"),
       ];
-      const reconcilable = toReconcilable(excludeFutureIntakes(students), term.source.block);
+      const reconcilable = scopeToCampus(toReconcilable(excludeFutureIntakes(students), term.source.block));
       return {
         dashboard: buildDashboardData(reconcilable),
         conflicts: buildConflictReport(reconcilable),
@@ -88,7 +97,7 @@ export async function loadTermData(slug: string): Promise<TermData | null> {
         ...parseCampusRows(mainRows, "MAIN"),
         ...parseCampusRows(nakuruRows, "NAKURU"),
       ];
-      const reconcilable = buildFromStatusLog(excludeFutureIntakes(roster), logRows, term.source.termLabel);
+      const reconcilable = scopeToCampus(buildFromStatusLog(excludeFutureIntakes(roster), logRows, term.source.termLabel));
       return {
         dashboard: buildDashboardData(reconcilable),
         conflicts: buildConflictReport(reconcilable),
@@ -112,7 +121,7 @@ export async function loadTermData(slug: string): Promise<TermData | null> {
         ...extractColumnStatus(mainRows, colIdx),
         ...extractColumnStatus(nakuruRows, colIdx),
       ]);
-      const reconcilable = buildFromColumn(excludeFutureIntakes(roster), statusByAdmission);
+      const reconcilable = scopeToCampus(buildFromColumn(excludeFutureIntakes(roster), statusByAdmission));
       return {
         dashboard: buildDashboardData(reconcilable),
         conflicts: buildConflictReport(reconcilable),
@@ -120,11 +129,27 @@ export async function loadTermData(slug: string): Promise<TermData | null> {
       };
     }
 
-    // static historical snapshot — pre-parsed JSON, no live fetch
+    // static historical snapshot — pre-parsed JSON, no live fetch. Known
+    // gap: a campus-scoped account viewing one of these still sees the
+    // combined-campus totals/department breakdown as originally snapshotted
+    // (these are frozen past-year figures with no live edit capability, so
+    // there's no write-side risk) — only studentsByStatus (individual
+    // records) is filtered, so no other campus's student-level data leaks.
     const filePath = path.join(process.cwd(), "data", "historical", term.source.file);
     const raw = await fs.readFile(filePath, "utf-8");
     const parsed = JSON.parse(raw);
-    return { dashboard: parsed.dashboard, conflicts: parsed.conflicts ?? [], isLive: false };
+    const dashboard: DashboardData = parsed.dashboard;
+    if (campusFilter) {
+      const scopedStudentsByStatus: DashboardData["studentsByStatus"] = {};
+      for (const [status, list] of Object.entries(dashboard.studentsByStatus ?? {})) {
+        scopedStudentsByStatus[status] = (list as any[]).filter((s) => s.campus === campusFilter);
+      }
+      dashboard.studentsByStatus = scopedStudentsByStatus;
+    }
+    const conflicts: ConflictRow[] = campusFilter
+      ? (parsed.conflicts ?? []).filter((c: ConflictRow) => (c as any).campus === campusFilter)
+      : parsed.conflicts ?? [];
+    return { dashboard, conflicts, isLive: false };
   } catch (err: any) {
     // Common cause: a sheet tab this term depends on (e.g. "STATUS LOG")
     // doesn't exist yet. Don't crash the build/page — surface it instead.

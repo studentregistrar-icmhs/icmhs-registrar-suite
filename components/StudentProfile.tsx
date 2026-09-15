@@ -23,7 +23,7 @@ type LockNotice = {
   graduationCohort?: string;
 };
 
-export default function StudentProfile({ initialProfile }: { initialProfile: Profile }) {
+export default function StudentProfile({ initialProfile, canEdit = true }: { initialProfile: Profile; canEdit?: boolean }) {
   const router = useRouter();
   const [profile, setProfile] = useState(initialProfile);
   const [pendingTerm, setPendingTerm] = useState<string | null>(null);
@@ -103,6 +103,7 @@ export default function StudentProfile({ initialProfile }: { initialProfile: Pro
             entry={entry}
             isPending={pendingTerm === entry.termSlug}
             saving={saving}
+            canEdit={canEdit}
             onStartEdit={() => {
               setPendingTerm(entry.termSlug);
               setPendingStatus(entry.status === "Unmarked" ? STATUS_OPTIONS[0] : entry.status);
@@ -161,7 +162,7 @@ export default function StudentProfile({ initialProfile }: { initialProfile: Pro
 }
 
 function TimelineRow({
-  entry, isPending, saving, onStartEdit, onCancel,
+  entry, isPending, saving, canEdit, onStartEdit, onCancel,
   pendingStatus, onStatusChange,
   pendingValidityDate, onValidityDateChange,
   pendingGraduationCohort, onGraduationCohortChange,
@@ -170,6 +171,7 @@ function TimelineRow({
   entry: TimelineEntry;
   isPending: boolean;
   saving: boolean;
+  canEdit: boolean;
   onStartEdit: () => void;
   onCancel: () => void;
   pendingStatus: string;
@@ -222,7 +224,7 @@ function TimelineRow({
           <span style={{ ...styles.statusPill, background: isTerminal ? "#F3E7E4" : "#EAF3EF", color: isTerminal ? C.rose : C.teal }}>
             {entry.status}
           </span>
-          {entry.editable && (
+          {entry.editable && canEdit && (
             <button style={styles.editBtn} onClick={onStartEdit}>Edit</button>
           )}
         </div>
