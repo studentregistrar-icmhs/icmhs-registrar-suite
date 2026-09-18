@@ -25,6 +25,7 @@ const REQUIRED = [
   "applicationDate",
   "program",
   "campus",
+  "deferredPreviousSemester",
   "typeOfDeferment",
   "semesterDeferring",
   "deferYear",
@@ -55,6 +56,20 @@ export async function POST(request) {
 
   if (!PHONE_PATTERN.test(body.phone)) {
     return NextResponse.json({ error: "Phone number must contain digits only." }, { status: 400 });
+  }
+
+  // ICMHS policy permits deferring one semester at a time. The apply form
+  // hides the rest of itself when the student answers "Yes" here, but that's
+  // only a convenience — this check is what actually enforces it, since the
+  // form is public and this endpoint can be called directly.
+  if (String(body.deferredPreviousSemester).trim().toLowerCase() === "yes") {
+    return NextResponse.json(
+      {
+        error:
+          "Deferment is permitted for one semester only. Because you deferred the previous semester, an extension must be requested in person at the Office of the Registrar of Students."
+      },
+      { status: 400 }
+    );
   }
 
   // Fetch the registrar-set deadline for the CURRENT ongoing semester (if any),
@@ -113,12 +128,12 @@ export async function POST(request) {
       INSERT INTO deferment_requests (
         id, full_name, admission_number, email, phone, application_date, program, campus,
         type_of_deferment, semester_deferring, defer_year, resumption_date,
-        reason_category, reason_details, status
+        reason_category, reason_details, deferred_previous_semester, status
       ) VALUES (
         ${id}, ${body.fullName}, ${body.admissionNumber}, ${body.email}, ${body.phone},
         ${body.applicationDate}, ${body.program}, ${body.campus}, ${body.typeOfDeferment},
         ${body.semesterDeferring}, ${body.deferYear}, ${body.resumptionDate},
-        ${body.reasonCategory}, ${body.reasonDetails}, 'pending'
+        ${body.reasonCategory}, ${body.reasonDetails}, ${body.deferredPreviousSemester}, 'pending'
       )
     `;
     return NextResponse.json({ id }, { status: 201 });

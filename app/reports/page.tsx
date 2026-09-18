@@ -1,4 +1,5 @@
 import Link from "next/link";
+import BackLink from "@/components/BackLink";
 import { TERMS } from "@/lib/terms";
 import { getReportingTrend } from "@/lib/reportingTrend";
 import ReportingTrendChart from "@/components/ReportingTrendChart";
@@ -20,7 +21,7 @@ export default async function ReportsPage() {
 
   return (
     <div style={styles.page}>
-      <Link href="/" style={styles.back}>← Back</Link>
+      <BackLink fallbackHref="/" style={styles.back} />
       <div style={styles.eyebrow}>ICMHS · REGISTRAR'S OFFICE</div>
       <h1 style={styles.h1}>Reports</h1>
       <p style={styles.sub}>

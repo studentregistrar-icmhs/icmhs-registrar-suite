@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import BackLink from "@/components/BackLink";
 
 type Result = { admissionNo: string; name: string; courseCode: string; courseName: string; campus: string };
 
@@ -30,7 +31,7 @@ export default function StudentSearchPage() {
 
   return (
     <div style={styles.page}>
-      <Link href="/" style={styles.backLink}>← All terms</Link>
+      <BackLink fallbackHref="/" style={styles.backLink} />
       <h1 style={styles.h1}>Find a student</h1>
       <input
         autoFocus

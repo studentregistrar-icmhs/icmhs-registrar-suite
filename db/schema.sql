@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS deferment_requests (
   resumption_date    TEXT,
   reason_category    TEXT NOT NULL,
   reason_details     TEXT NOT NULL,
+  deferred_previous_semester TEXT,
   status             TEXT NOT NULL DEFAULT 'pending',
   reviewer_notes     TEXT DEFAULT '',
   submitted_at       TIMESTAMPTZ NOT NULL DEFAULT now(),

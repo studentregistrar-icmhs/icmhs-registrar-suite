@@ -5,12 +5,22 @@ import { reconcile, STATUS_LABEL, TERMINAL_STATUSES } from "./reconcile";
 import { TERMS, getCurrentTermSlug } from "./terms";
 import { columnIndex } from "./columns";
 import { GRADUATION_COHORT_COLUMN } from "./graduationCohort";
+import { normalizeSheetDate } from "./sheetDates";
 
 export type TimelineEntry = {
   termSlug: string;
   termLabel: string;
   status: string;
   editable: boolean; // false for static historical terms, AND for any term other than the one being viewed — see viewingTermSlug below
+  /** Lecture card validity date, as "YYYY-MM-DD". Only ever set for a
+   * live-column term whose status is "In Session" (that's the only case
+   * the sheet stores one for — see lib/terms.ts validityColumn). "" or
+   * absent otherwise. */
+  validityDate?: string;
+  /** When the "In Session" entry was recorded, as "YYYY-MM-DD" — stamped
+   * automatically at write time, never typed by the registrar. Same
+   * conditions as validityDate above. */
+  dateReported?: string;
 };
 
 export type StudentProfile = {
@@ -107,7 +117,24 @@ export async function getStudentTimeline(admissionNo: string, viewingTermSlug?: 
     const status = inheritedTerminal
       ? inheritedTerminal
       : String(loc.rawRow[columnIndex(term.source.column)] ?? "").trim() || "Unmarked";
-    timeline.push({ termSlug: term.slug, termLabel: term.label, status, editable: true });
+
+    // The validity / date-reported columns are only meaningful alongside an
+    // "In Session" status — that's the only status the sheet ever writes
+    // them for. Reading them regardless of status would surface a stale
+    // date left over from a previous term's entry after someone's status
+    // changed to something else, which would be actively misleading.
+    let validityDate = "";
+    let dateReported = "";
+    if (status === STATUS_LABEL.reported) {
+      if (term.source.validityColumn) {
+        validityDate = normalizeSheetDate(loc.rawRow[columnIndex(term.source.validityColumn)]);
+      }
+      if (term.source.dateReportedColumn) {
+        dateReported = normalizeSheetDate(loc.rawRow[columnIndex(term.source.dateReportedColumn)]);
+      }
+    }
+
+    timeline.push({ termSlug: term.slug, termLabel: term.label, status, editable: true, validityDate, dateReported });
   }
 
   // Static historical terms would be added here once their JSON snapshots

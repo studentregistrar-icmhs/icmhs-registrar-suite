@@ -12,6 +12,7 @@ import { toCsv, downloadCsv, parseCsv } from "@/lib/csv";
 import { getDepartment } from "@/lib/departments";
 import { parseIntake } from "@/lib/intake";
 import UserMenu from "@/components/UserMenu";
+import BackLink from "@/components/BackLink";
 
 const C = {
   ink: "#122A28", bg: "#EEF1EA", card: "#FFFFFF", line: "#D9DFD3",
@@ -248,6 +249,11 @@ export default function Dashboard({
     }
   }
   const [unmarkedQuery, setUnmarkedQuery] = useState("");
+  // Independent of the dashboard-wide departmentFilter on purpose: the
+  // Unmarked list is a working queue (you tend to clear it one school at a
+  // time), so it needs its own filter that doesn't disturb the KPIs and
+  // charts above it.
+  const [unmarkedDept, setUnmarkedDept] = useState("all");
   const [markingId, setMarkingId] = useState<string | null>(null);
   const [markSelections, setMarkSelections] = useState<Record<string, string>>({});
   const [pendingResolve, setPendingResolve] = useState<
@@ -436,7 +442,10 @@ export default function Dashboard({
   function exportUnmarked() {
     const headers = ["Admission No.", "Name", "Campus", "Course"];
     const rows = unmarked.map((s) => [s.admissionNo, s.name, s.campus, s.courseName || s.courseCode]);
-    downloadCsv(`${termLabel.replace(/\s+/g, "-")}-unmarked.csv`, toCsv(headers, rows));
+    // Name the file after the active school filter too, so exports taken
+    // one school at a time don't all land in Downloads with the same name.
+    const deptPart = unmarkedDept !== "all" ? `-${unmarkedDept.replace(/^School of /, "").replace(/\s+/g, "-")}` : "";
+    downloadCsv(`${termLabel.replace(/\s+/g, "-")}${deptPart}-unmarked.csv`, toCsv(headers, rows));
   }
 
   const unmarked = useMemo(() => {
@@ -445,6 +454,9 @@ export default function Dashboard({
       const c = campus === "main" ? "MAIN" : "NAKURU";
       rows = rows.filter((s) => s.campus === c);
     }
+    if (unmarkedDept !== "all") {
+      rows = rows.filter((s) => getDepartment(s.courseCode) === unmarkedDept);
+    }
     if (unmarkedQuery.trim()) {
       const q = unmarkedQuery.trim().toLowerCase();
       rows = rows.filter(
@@ -452,7 +464,24 @@ export default function Dashboard({
       );
     }
     return rows;
-  }, [data, campus, unmarkedQuery]);
+  }, [data, campus, unmarkedDept, unmarkedQuery]);
+
+  // Schools that actually have unmarked students right now, with counts —
+  // listing every school in the college would leave you clicking through
+  // options that return nothing.
+  const unmarkedDeptOptions = useMemo(() => {
+    let rows = data.studentsByStatus["Unmarked"] ?? [];
+    if (campus !== "all") {
+      const c = campus === "main" ? "MAIN" : "NAKURU";
+      rows = rows.filter((s) => s.campus === c);
+    }
+    const counts = new Map<string, number>();
+    for (const s of rows) {
+      const d = getDepartment(s.courseCode);
+      counts.set(d, (counts.get(d) ?? 0) + 1);
+    }
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+  }, [data, campus]);
 
   const cleanCount = total - conflicts.length - unmarked.length;
   const qualityPct = total ? ((cleanCount / total) * 100).toFixed(1) : "0.0";
@@ -602,6 +631,23 @@ export default function Dashboard({
     }
   }
 
+  // If switching campus leaves the chosen school with no unmarked students,
+  // fall back to "all" rather than showing an empty list against a filter
+  // that's no longer in the dropdown.
+  useEffect(() => {
+    if (unmarkedDept !== "all" && !unmarkedDeptOptions.some(([d]) => d === unmarkedDept)) {
+      setUnmarkedDept("all");
+    }
+  }, [unmarkedDeptOptions, unmarkedDept]);
+
+  // Clear any tick-box selection when the school filter changes. Without
+  // this, students selected under one school stay selected while hidden,
+  // and "Set selected" would silently write to students you can no longer
+  // see on screen.
+  useEffect(() => {
+    setSelectedUnmarked(new Set());
+  }, [unmarkedDept]);
+
   async function handleCarryForward(password: string) {
     setCarryingForward(true);
     try {
@@ -690,7 +736,7 @@ export default function Dashboard({
     <div style={styles.page}>
       <header style={styles.header}>
         <div>
-          <Link href="/" style={styles.backLink}>← All terms</Link>
+          <BackLink fallbackHref="/" style={styles.backLink} />
           <div style={styles.eyebrow}>ICMHS · REGISTRAR'S OFFICE · {isLive ? "LIVE" : "STATIC SNAPSHOT"}</div>
           <h1 style={styles.h1}>{termLabel}</h1>
           <div style={styles.sub}>
@@ -1138,6 +1184,17 @@ export default function Dashboard({
               <span style={styles.cardNote}>students with no status column marked at all this term</span>
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <select
+                value={unmarkedDept}
+                onChange={(e) => setUnmarkedDept(e.target.value)}
+                style={styles.unmarkedDeptSelect}
+                title="Filter the unmarked list to one school"
+              >
+                <option value="all">All schools</option>
+                {unmarkedDeptOptions.map(([dept, count]) => (
+                  <option key={dept} value={dept}>{dept} ({count})</option>
+                ))}
+              </select>
               <div style={{ position: "relative" }}>
                 <svg
                   width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={C.slate} strokeWidth="2.5"
@@ -1206,6 +1263,8 @@ export default function Dashboard({
             <div style={{ padding: "20px 0", color: C.slate }}>
               {unmarkedQuery.trim()
                 ? "No unmarked students match that search."
+                : unmarkedDept !== "all"
+                ? `No unmarked students left in ${unmarkedDept}. 🎉`
                 : "No unmarked students — everyone has at least one status flag set. 🎉"}
             </div>
           ) : (
@@ -2048,6 +2107,7 @@ const styles: Record<string, React.CSSProperties> = {
   exportBtn: { border: `1px solid ${C.line}`, background: "#fff", color: C.ink, padding: "7px 14px", borderRadius: 6, fontSize: 12.5, fontWeight: 600, cursor: "pointer" },
   globalSearch: { border: `1px solid ${C.line}`, borderRadius: 8, padding: "9px 14px", fontSize: 13, width: 230, outline: "none", background: "#fff" },
   unmarkedSearch: { border: `1px solid ${C.line}`, borderRadius: 6, padding: "6px 10px 6px 26px", fontSize: 12, width: 170, outline: "none", background: "#fff", color: C.ink, fontFamily: "Inter, sans-serif" },
+  unmarkedDeptSelect: { border: `1px solid ${C.line}`, borderRadius: 6, padding: "6px 8px", fontSize: 12, outline: "none", background: "#fff", color: C.ink, fontFamily: "Inter, sans-serif", maxWidth: 260 },
   globalDropdown: { position: "absolute", top: "calc(100% + 6px)", left: 0, width: 340, maxHeight: 380, overflowY: "auto", background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, boxShadow: "0 8px 24px rgba(18,42,40,0.15)", zIndex: 60 },
   globalRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "9px 14px", borderTop: `1px solid ${C.line}` },
   globalStatusPill: { fontSize: 10.5, fontFamily: "IBM Plex Mono, monospace", color: C.teal, background: "#E5F1EF", borderRadius: 12, padding: "3px 9px", whiteSpace: "nowrap" },

@@ -158,6 +158,7 @@ function Entry({ record, open, onToggle, onUpdated }) {
             <Detail k="Type of Deferment" v={record.type_of_deferment} />
             <Detail k="Semester Deferring" v={`${record.semester_deferring || ""} ${record.defer_year || ""}`.trim()} />
             <Detail k="Resumption Date" v={record.resumption_date} />
+            <Detail k="Deferred previous semester" v={record.deferred_previous_semester || "—"} />
             <Detail k="Reason category" v={record.reason_category} />
             <Detail full k="Explanation" v={record.reason_details} />
           </div>

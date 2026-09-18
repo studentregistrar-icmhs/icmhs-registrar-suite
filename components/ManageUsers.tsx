@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import BackLink from "@/components/BackLink";
 
 const C = {
   ink: "#122A28", bg: "#EEF1EA", card: "#FFFFFF", line: "#D9DFD3",
@@ -118,7 +119,7 @@ export default function ManageUsers({ currentUserId }: { currentUserId: number }
 
   return (
     <div style={styles.page}>
-      <Link href="/" style={styles.backLink}>← Back to dashboard</Link>
+      <BackLink fallbackHref="/" style={styles.backLink} />
       <div style={styles.eyebrow}>ADMIN</div>
       <h1 style={styles.h1}>Manage registrar accounts</h1>
 

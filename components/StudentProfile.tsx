@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import type { StudentProfile as Profile, TimelineEntry } from "@/lib/studentTimeline";
+import { formatSheetDate } from "@/lib/sheetDates";
+import BackLink from "@/components/BackLink";
 
 const STATUS_OPTIONS = [
   "Graduated", "In Session", "Attachment", "Clinicals",
@@ -24,7 +25,6 @@ type LockNotice = {
 };
 
 export default function StudentProfile({ initialProfile, canEdit = true }: { initialProfile: Profile; canEdit?: boolean }) {
-  const router = useRouter();
   const [profile, setProfile] = useState(initialProfile);
   const [pendingTerm, setPendingTerm] = useState<string | null>(null);
   const [pendingStatus, setPendingStatus] = useState<string>("");
@@ -74,15 +74,7 @@ export default function StudentProfile({ initialProfile, canEdit = true }: { ini
 
   return (
     <div style={styles.page}>
-      <button
-        onClick={() => {
-          if (typeof window !== "undefined" && window.history.length > 1) router.back();
-          else router.push("/students");
-        }}
-        style={styles.backLink}
-      >
-        ← Back
-      </button>
+      <BackLink fallbackHref="/students" style={styles.backLink} />
       <div style={styles.eyebrow}>{profile.admissionNo}</div>
       <h1 style={styles.h1}>{profile.name}</h1>
       <div style={styles.sub}>{profile.courseName || profile.courseCode} · {profile.campus}{profile.gender ? ` · ${profile.gender}` : ""}</div>
@@ -107,7 +99,10 @@ export default function StudentProfile({ initialProfile, canEdit = true }: { ini
             onStartEdit={() => {
               setPendingTerm(entry.termSlug);
               setPendingStatus(entry.status === "Unmarked" ? STATUS_OPTIONS[0] : entry.status);
-              setPendingValidityDate("");
+              // Prefill from what's already on file, so re-saving an
+              // already-"In Session" student doesn't silently blank out
+              // their validity date or force it to be retyped.
+              setPendingValidityDate(entry.validityDate || "");
               setPendingGraduationCohort(profile.graduationCohort || "");
             }}
             onCancel={() => setPendingTerm(null)}
@@ -187,7 +182,19 @@ function TimelineRow({
   const canSave = !needsValidityDate || pendingValidityDate.trim() !== "";
   return (
     <div style={styles.row}>
-      <div style={styles.rowLabel}>{entry.termLabel}</div>
+      <div>
+        <div style={styles.rowLabel}>{entry.termLabel}</div>
+        {/* Only ever populated for an "In Session" status on a term whose
+            sheet has these columns — so this line simply doesn't render for
+            other statuses or older terms, rather than showing blanks. */}
+        {(entry.validityDate || entry.dateReported) && (
+          <div style={styles.rowMeta}>
+            {entry.validityDate && <span>Valid until {formatSheetDate(entry.validityDate)}</span>}
+            {entry.validityDate && entry.dateReported && <span style={{ opacity: 0.5 }}> · </span>}
+            {entry.dateReported && <span>Reported {formatSheetDate(entry.dateReported)}</span>}
+          </div>
+        )}
+      </div>
       {isPending ? (
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
           <select value={pendingStatus} onChange={(e) => onStatusChange(e.target.value)} style={styles.select}>
@@ -244,6 +251,7 @@ const styles: Record<string, React.CSSProperties> = {
   timeline: { display: "flex", flexDirection: "column", gap: 10 },
   row: { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", border: `1px solid ${C.line}`, borderRadius: 8, padding: "14px 16px" },
   rowLabel: { fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 14 },
+  rowMeta: { fontFamily: "IBM Plex Mono, monospace", fontSize: 11.5, color: C.slate, marginTop: 3 },
   statusPill: { fontSize: 12.5, fontWeight: 600, padding: "4px 10px", borderRadius: 20 },
   editBtn: { border: `1px solid ${C.line}`, background: "#fff", borderRadius: 6, padding: "5px 10px", fontSize: 12, cursor: "pointer", color: C.slate },
   select: { border: `1px solid ${C.line}`, borderRadius: 6, padding: "6px 8px", fontSize: 13 },

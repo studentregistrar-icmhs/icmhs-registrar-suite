@@ -19,6 +19,7 @@ const initialState = {
   phone: "",
   program: "",
   campus: "",
+  deferredPreviousSemester: "",
   typeOfDeferment: "",
   semesterDeferring: "",
   deferYear: "",
@@ -57,6 +58,12 @@ export default function ApplyPage() {
   }, []);
 
   const isMaternity = form.typeOfDeferment === "Maternity Leave";
+  // ICMHS policy allows deferring one semester at a time. A student who
+  // already deferred the previous semester can't stack another one through
+  // this form — an extension has to be requested in person. This is
+  // re-checked server-side in /api/deferments/submit too, so editing the
+  // page in a browser can't get around it.
+  const blockedForPriorDeferment = form.deferredPreviousSemester === "Yes";
 
   const currentSemesterValue = useMemo(() => getCurrentSemesterValue(now), [now]);
   const currentYear = now.getFullYear();
@@ -278,6 +285,39 @@ function unlockDetails() {
           <div className="field-group">
             <div className="num">03</div>
             <h2>Deferment Details</h2>
+            <div className="field">
+              <label>Did you defer the previous semester? <span className="req">*</span></label>
+              <select
+                required
+                value={form.deferredPreviousSemester}
+                onChange={(e) => update("deferredPreviousSemester", e.target.value)}
+              >
+                <option value="">Select…</option>
+                <option value="No">No</option>
+                <option value="Yes">Yes</option>
+              </select>
+            </div>
+
+            {blockedForPriorDeferment && (
+              <div className="blocked-notice">
+                <strong>You cannot apply for another deferment online.</strong>
+                <p>
+                  ICMHS policy permits a deferment of one semester only. Because you deferred
+                  the previous semester, an extension cannot be requested through this form.
+                </p>
+                <p>
+                  Please visit the Office of the Registrar of Students in person to request an
+                  extension of your deferment. Bring your student identification and any
+                  supporting documents relating to your circumstances.
+                </p>
+                <p className="muted">
+                  If you selected this by mistake, change your answer above to continue.
+                </p>
+              </div>
+            )}
+
+            {!blockedForPriorDeferment && (
+            <>
             <div className="row">
               <div className="field">
                 <label>Type of Deferment <span className="req">*</span></label>
@@ -330,8 +370,12 @@ function unlockDetails() {
               three months) at a time. Your resumption date above is calculated automatically
               according to this policy and cannot be extended. Anyone who wishes to extend their Deferment MUST reapply for extension during that semester.
             </div>
+            </>
+            )}
           </div>
 
+          {!blockedForPriorDeferment && (
+          <>
           <div className="field-group">
             <div className="num">04</div>
             <h2>Reason for Deferment</h2>
@@ -376,6 +420,8 @@ function unlockDetails() {
               {submitting ? "Submitting…" : "Submit Request"}
             </button>
           </div>
+          </>
+          )}
         </form>
         {error && <div className="err" style={{ padding: "0 26px 16px" }}>{error}</div>}
       </div>

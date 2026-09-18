@@ -127,6 +127,18 @@ button.approve:disabled,button.deny:disabled,button.reset:disabled{opacity:0.4;c
   background:#FBF3E3;border:1px solid var(--gold);border-radius:5px;padding:12px 14px;
   font-size:13px;line-height:1.55;color:var(--ink);margin-top:14px;
 }
+
+/* Shown in place of the rest of the deferment form when a student says they
+   already deferred the previous semester — policy allows one semester only,
+   so an extension has to be requested in person. */
+.blocked-notice{
+  background:#FBEDEF;border:1px solid var(--stamp-red);border-radius:5px;
+  padding:16px 18px;margin-top:14px;font-size:14px;line-height:1.6;color:var(--ink);
+}
+.blocked-notice strong{display:block;color:var(--stamp-red);font-size:15px;margin-bottom:8px;}
+.blocked-notice p{margin:0 0 10px;}
+.blocked-notice p:last-child{margin-bottom:0;}
+.blocked-notice .muted{font-size:13px;opacity:0.7;}
 .settings-nav{margin-bottom:18px;}
 .settings-nav .tab-btn{opacity:1;color:var(--navy);font-weight:600;padding-left:0;}
 .deadline-grid{display:flex;flex-direction:column;gap:10px;}
