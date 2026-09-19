@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySessionToken, SESSION_COOKIE } from "@/lib/auth/session";
-import { USER_HEADERS } from "@/lib/auth/currentUser";
+import { USER_HEADERS, encodeScopeHeader } from "@/lib/auth/currentUser";
 
 /**
  * Session-based auth, enforced at the edge before any page or API route
@@ -81,6 +81,19 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL("/change-password", req.url));
   }
 
+  // Deferments admin review area — a separate permission from role, since
+  // an editor/viewer may or may not need it (e.g. most HOD accounts won't).
+  // Always allowed for admins regardless of the account's own setting.
+  const isDefermentsAdminPath =
+    pathname.startsWith("/deferments/admin") || pathname.startsWith("/api/deferments/requests");
+  const isDefermentsDeadlinesWrite = pathname === "/api/deferments/deadlines" && req.method !== "GET";
+  if ((isDefermentsAdminPath || isDefermentsDeadlinesWrite) && session.role !== "admin" && !session.canViewDeferments) {
+    if (isApiRequest(pathname)) {
+      return NextResponse.json({ ok: false, reason: "You don't have access to the Deferments module." }, { status: 403 });
+    }
+    return NextResponse.redirect(new URL("/", req.url));
+  }
+
   // Attach the verified identity as request headers so pages and route
   // handlers can read it (via lib/auth/currentUser.ts) without
   // re-verifying the session cookie themselves on every read.
@@ -90,6 +103,9 @@ export async function middleware(req: NextRequest) {
   forwardedHeaders.set(USER_HEADERS.displayName, session.displayName);
   forwardedHeaders.set(USER_HEADERS.role, session.role);
   forwardedHeaders.set(USER_HEADERS.campusScope, session.campusScope);
+  forwardedHeaders.set(USER_HEADERS.departmentScope, encodeScopeHeader(session.departmentScope));
+  forwardedHeaders.set(USER_HEADERS.termScope, encodeScopeHeader(session.termScope));
+  forwardedHeaders.set(USER_HEADERS.canViewDeferments, String(session.canViewDeferments));
 
   return NextResponse.next({ request: { headers: forwardedHeaders } });
 }

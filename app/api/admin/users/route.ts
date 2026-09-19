@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUserFromRequest, isAdmin } from "@/lib/auth/currentUser";
 import { listUsers, createUser, findActiveUserByUsername } from "@/lib/auth/users";
+import { parseDepartmentScope, parseTermScope } from "@/lib/auth/validateScopes";
 import type { Role, CampusScope } from "@/lib/auth/session";
 
 const VALID_ROLES: Role[] = ["admin", "editor", "viewer"];
@@ -26,6 +27,9 @@ export async function POST(req: NextRequest) {
     displayName?: string;
     role?: string;
     campusScope?: string;
+    departmentScope?: string[] | null;
+    termScope?: string[] | null;
+    canViewDeferments?: boolean;
   };
   const username = (body.username ?? "").trim();
   const displayName = (body.displayName ?? "").trim();
@@ -47,15 +51,37 @@ export async function POST(req: NextRequest) {
   if (!VALID_SCOPES.includes(campusScope)) {
     return NextResponse.json({ ok: false, reason: "Invalid campus scope." }, { status: 400 });
   }
+
+  let departmentScope: string[] | null;
+  let termScope: string[] | null;
+  try {
+    departmentScope = parseDepartmentScope(body.departmentScope);
+    termScope = parseTermScope(body.termScope);
+  } catch (err: any) {
+    return NextResponse.json({ ok: false, reason: err.message }, { status: 400 });
+  }
+
   if (await findActiveUserByUsername(username)) {
     return NextResponse.json({ ok: false, reason: "That username is already taken." }, { status: 400 });
   }
 
-  // Admins always effectively have ALL scope — storing it as ALL rather
-  // than whatever was passed keeps that true everywhere this column is
-  // read, not just in the permission-check helpers.
-  const effectiveScope = role === "admin" ? "ALL" : campusScope;
+  // Admins always effectively have full access — storing ALL/null/true
+  // rather than whatever was passed keeps that true everywhere these
+  // columns are read, not just in the permission-check helpers.
+  const isAdminRole = role === "admin";
+  const effectiveScope = isAdminRole ? "ALL" : campusScope;
+  const effectiveDeptScope = isAdminRole ? null : departmentScope;
+  const effectiveTermScope = isAdminRole ? null : termScope;
+  const effectiveCanViewDeferments = isAdminRole ? true : !!body.canViewDeferments;
 
-  const { user, tempPassword } = await createUser({ username, displayName, role, campusScope: effectiveScope });
+  const { user, tempPassword } = await createUser({
+    username,
+    displayName,
+    role,
+    campusScope: effectiveScope,
+    departmentScope: effectiveDeptScope,
+    termScope: effectiveTermScope,
+    canViewDeferments: effectiveCanViewDeferments,
+  });
   return NextResponse.json({ ok: true, user, tempPassword });
 }

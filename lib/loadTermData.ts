@@ -9,6 +9,7 @@ import { buildConflictReport, ConflictRow } from "./reconcile";
 import { isFutureIntake } from "./intake";
 import { columnIndex } from "./columns";
 import { GRADUATION_COHORT_COLUMN } from "./graduationCohort";
+import { getDepartment } from "./departments";
 
 // Every roster fetch must reach at least as far as the Graduation Cohort
 // column (see lib/graduationCohort.ts) — it's read into every Student
@@ -43,7 +44,11 @@ const EMPTY_DASHBOARD: DashboardData = {
   conflictCount: 0,
 };
 
-export async function loadTermData(slug: string, campusFilter?: "MAIN" | "NAKURU"): Promise<TermData | null> {
+export async function loadTermData(
+  slug: string,
+  campusFilter?: "MAIN" | "NAKURU",
+  departmentFilter?: string[]
+): Promise<TermData | null> {
   const term = getTerm(slug);
   if (!term) return null;
 
@@ -69,6 +74,22 @@ export async function loadTermData(slug: string, campusFilter?: "MAIN" | "NAKURU
     return campusFilter ? rows.filter((r) => r.campus === campusFilter) : rows;
   }
 
+  // Department-scoped accounts (e.g. an HOD) never see students outside
+  // their own school(s) — same enforcement philosophy as campus scoping:
+  // filtered here, before KPIs/breakdowns/conflicts are computed, not just
+  // hidden client-side. Composes with campus scoping (an account can be
+  // restricted on both, either, or neither) since scopeStudents below
+  // applies them one after another.
+  function scopeToDepartment<T extends { courseCode: string }>(rows: T[]): T[] {
+    if (!departmentFilter || departmentFilter.length === 0) return rows;
+    const allowed = new Set(departmentFilter);
+    return rows.filter((r) => allowed.has(getDepartment(r.courseCode)));
+  }
+
+  function scopeStudents<T extends { campus: "MAIN" | "NAKURU"; courseCode: string }>(rows: T[]): T[] {
+    return scopeToDepartment(scopeToCampus(rows));
+  }
+
   try {
     if (term.source.kind === "live-legacy") {
       const [mainRows, nakuruRows] = await Promise.all([
@@ -79,7 +100,7 @@ export async function loadTermData(slug: string, campusFilter?: "MAIN" | "NAKURU
         ...parseCampusRows(mainRows, "MAIN"),
         ...parseCampusRows(nakuruRows, "NAKURU"),
       ];
-      const reconcilable = scopeToCampus(toReconcilable(excludeFutureIntakes(students), term.source.block));
+      const reconcilable = scopeStudents(toReconcilable(excludeFutureIntakes(students), term.source.block));
       return {
         dashboard: buildDashboardData(reconcilable),
         conflicts: buildConflictReport(reconcilable),
@@ -97,7 +118,7 @@ export async function loadTermData(slug: string, campusFilter?: "MAIN" | "NAKURU
         ...parseCampusRows(mainRows, "MAIN"),
         ...parseCampusRows(nakuruRows, "NAKURU"),
       ];
-      const reconcilable = scopeToCampus(buildFromStatusLog(excludeFutureIntakes(roster), logRows, term.source.termLabel));
+      const reconcilable = scopeStudents(buildFromStatusLog(excludeFutureIntakes(roster), logRows, term.source.termLabel));
       return {
         dashboard: buildDashboardData(reconcilable),
         conflicts: buildConflictReport(reconcilable),
@@ -121,7 +142,7 @@ export async function loadTermData(slug: string, campusFilter?: "MAIN" | "NAKURU
         ...extractColumnStatus(mainRows, colIdx),
         ...extractColumnStatus(nakuruRows, colIdx),
       ]);
-      const reconcilable = scopeToCampus(buildFromColumn(excludeFutureIntakes(roster), statusByAdmission));
+      const reconcilable = scopeStudents(buildFromColumn(excludeFutureIntakes(roster), statusByAdmission));
       return {
         dashboard: buildDashboardData(reconcilable),
         conflicts: buildConflictReport(reconcilable),
@@ -130,19 +151,25 @@ export async function loadTermData(slug: string, campusFilter?: "MAIN" | "NAKURU
     }
 
     // static historical snapshot — pre-parsed JSON, no live fetch. Known
-    // gap: a campus-scoped account viewing one of these still sees the
-    // combined-campus totals/department breakdown as originally snapshotted
-    // (these are frozen past-year figures with no live edit capability, so
-    // there's no write-side risk) — only studentsByStatus (individual
-    // records) is filtered, so no other campus's student-level data leaks.
+    // gap: a campus- or department-scoped account viewing one of these
+    // still sees the combined totals/department breakdown as originally
+    // snapshotted (these are frozen past-year figures with no live edit
+    // capability, so there's no write-side risk) — only studentsByStatus
+    // (individual records) is filtered, so no out-of-scope student-level
+    // data leaks.
     const filePath = path.join(process.cwd(), "data", "historical", term.source.file);
     const raw = await fs.readFile(filePath, "utf-8");
     const parsed = JSON.parse(raw);
     const dashboard: DashboardData = parsed.dashboard;
-    if (campusFilter) {
+    if (campusFilter || (departmentFilter && departmentFilter.length > 0)) {
+      const deptAllowed = departmentFilter && departmentFilter.length > 0 ? new Set(departmentFilter) : null;
       const scopedStudentsByStatus: DashboardData["studentsByStatus"] = {};
       for (const [status, list] of Object.entries(dashboard.studentsByStatus ?? {})) {
-        scopedStudentsByStatus[status] = (list as any[]).filter((s) => s.campus === campusFilter);
+        scopedStudentsByStatus[status] = (list as any[]).filter(
+          (s) =>
+            (!campusFilter || s.campus === campusFilter) &&
+            (!deptAllowed || deptAllowed.has(getDepartment(s.courseCode)))
+        );
       }
       dashboard.studentsByStatus = scopedStudentsByStatus;
     }

@@ -3,7 +3,8 @@ import { notFound, redirect } from "next/navigation";
 import Dashboard from "@/components/Dashboard";
 import { getTerm, getPreviousTerm, TERMS } from "@/lib/terms";
 import { loadTermData } from "@/lib/loadTermData";
-import { getCurrentUser } from "@/lib/auth/currentUser";
+import { getCurrentUser, canAccessTerm } from "@/lib/auth/currentUser";
+import BackLink from "@/components/BackLink";
 
 export const revalidate = Number(process.env.REVALIDATE_SECONDS ?? 120);
 
@@ -17,19 +18,27 @@ export default async function TermPage({ params }: { params: { term: string } })
 
   const me = getCurrentUser();
   if (!me) redirect("/login"); // shouldn't happen — middleware already guards this route — but keeps this page honest on its own
+  // A term-scoped account (e.g. an HOD who should only see the current
+  // semester) can't reach a dashboard outside their allowed terms even by
+  // typing the URL directly — 404 rather than a redirect, so it behaves
+  // the same as a term slug that doesn't exist at all.
+  if (!canAccessTerm(me, params.term)) notFound();
   const campusFilter = me.campusScope !== "ALL" ? me.campusScope : undefined;
+  const departmentFilter = me.departmentScope ?? undefined;
 
   const previousTerm = getPreviousTerm(params.term);
   const [data, previousData] = await Promise.all([
-    loadTermData(params.term, campusFilter),
-    previousTerm ? loadTermData(previousTerm.slug, campusFilter) : Promise.resolve(null),
+    loadTermData(params.term, campusFilter, departmentFilter),
+    previousTerm && canAccessTerm(me, previousTerm.slug)
+      ? loadTermData(previousTerm.slug, campusFilter, departmentFilter)
+      : Promise.resolve(null),
   ]);
   if (!data) notFound();
 
   if (data.error) {
     return (
       <div style={notReadyStyles.page}>
-        <Link href="/" style={notReadyStyles.backLink}>← All terms</Link>
+        <BackLink fallbackHref="/" style={notReadyStyles.backLink} />
         <h1 style={notReadyStyles.h1}>{term.label} isn't set up yet</h1>
         <p style={notReadyStyles.p}>{data.error}</p>
         <p style={notReadyStyles.p}>
@@ -50,7 +59,7 @@ export default async function TermPage({ params }: { params: { term: string } })
       canCarryForward={term.source.kind === "live-column" && !!previousTerm}
       isColumnTerm={term.source.kind === "live-column"}
       apiTermSlug={params.term}
-      previousTermLabel={previousTerm?.label}
+      previousTermLabel={previousTerm && canAccessTerm(me, previousTerm.slug) ? previousTerm.label : undefined}
       previousData={previousData && !previousData.error ? previousData.dashboard : null}
       me={me}
     />

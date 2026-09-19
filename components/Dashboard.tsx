@@ -64,7 +64,13 @@ type Props = {
   apiTermSlug: string;
   previousTermLabel?: string;
   previousData?: DashboardData | null;
-  me: { role: "admin" | "editor" | "viewer"; campusScope: "ALL" | "MAIN" | "NAKURU"; displayName: string };
+  me: {
+    role: "admin" | "editor" | "viewer";
+    campusScope: "ALL" | "MAIN" | "NAKURU";
+    departmentScope: string[] | null;
+    termScope: string[] | null;
+    displayName: string;
+  };
 };
 
 const AUTO_REFRESH_MS = 3 * 60 * 1000;
@@ -746,7 +752,7 @@ export default function Dashboard({
           </div>
         </div>
         <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
-          <UserMenu displayName={me.displayName} role={me.role} campusScope={me.campusScope} />
+          <UserMenu displayName={me.displayName} role={me.role} campusScope={me.campusScope} departmentScope={me.departmentScope} termScope={me.termScope} />
           <div style={{ position: "relative" }}>
             <input
               value={globalQuery}

@@ -11,10 +11,14 @@ export default function UserMenu({
   displayName,
   role,
   campusScope,
+  departmentScope,
+  termScope,
 }: {
   displayName: string;
   role: string;
   campusScope: string;
+  departmentScope?: string[] | null;
+  termScope?: string[] | null;
 }) {
   const router = useRouter();
 
@@ -24,11 +28,18 @@ export default function UserMenu({
     router.refresh();
   }
 
+  const deptNote = departmentScope && departmentScope.length > 0
+    ? ` · ${departmentScope.length === 1 ? departmentScope[0].replace(/^School of /, "") : `${departmentScope.length} schools`}`
+    : "";
+  const termNote = termScope && termScope.length > 0
+    ? ` · ${termScope.length === 1 ? "1 term" : `${termScope.length} terms`}`
+    : "";
+
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 12, fontFamily: "Inter, sans-serif" }}>
       <div style={{ textAlign: "right", fontSize: 12.5, color: C.slate, lineHeight: 1.4 }}>
         <div style={{ color: C.ink, fontWeight: 600 }}>{displayName}</div>
-        <div>{ROLE_LABEL[role] ?? role}{SCOPE_LABEL[campusScope] ?? ""}</div>
+        <div>{ROLE_LABEL[role] ?? role}{SCOPE_LABEL[campusScope] ?? ""}{deptNote}{termNote}</div>
       </div>
       <button
         onClick={logout}

@@ -29,6 +29,9 @@ export async function POST(req: NextRequest) {
     displayName: user.display_name,
     role: user.role,
     campusScope: user.campus_scope,
+    departmentScope: user.department_scope,
+    termScope: user.term_scope,
+    canViewDeferments: user.can_view_deferments,
     mustResetPassword: user.must_reset_password,
   });
 

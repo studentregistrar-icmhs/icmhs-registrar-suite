@@ -1,5 +1,5 @@
 import { fetchSheetRows } from "./googleSheets";
-import { Campus } from "./parse";
+import { Campus, LAYOUT_FOR_WRITE } from "./parse";
 
 export type RowLocation = { campus: Campus; sheetRowNumber: number; rawRow: any[] };
 
@@ -49,6 +49,33 @@ export async function campusForAdmissionNumbers(admissionNos: string[]): Promise
       const row = rows[i];
       const adm = row ? String(row[tab.admissionCol]) : "";
       if (adm && wanted.has(adm)) result.set(adm, tab.campus);
+    }
+  }
+  return result;
+}
+
+/**
+ * Same idea as campusForAdmissionNumbers, but also returns each student's
+ * course code — needed to enforce department-scoped permissions (e.g. an
+ * HOD account) on batch write routes without an expensive per-student
+ * findStudentRow round-trip. Department itself is derived from courseCode
+ * by the caller (via lib/departments.ts's getDepartment), same as
+ * everywhere else in the app that needs a student's department.
+ */
+export async function campusAndCourseForAdmissionNumbers(
+  admissionNos: string[]
+): Promise<Map<string, { campus: Campus; courseCode: string }>> {
+  const wanted = new Set(admissionNos);
+  const result = new Map<string, { campus: Campus; courseCode: string }>();
+  for (const tab of TABS) {
+    const rows = await fetchSheetRows(tab.range);
+    const courseCodeCol = LAYOUT_FOR_WRITE[tab.campus].courseCode;
+    for (let i = 2; i < rows.length; i++) {
+      const row = rows[i];
+      const adm = row ? String(row[tab.admissionCol]) : "";
+      if (adm && wanted.has(adm)) {
+        result.set(adm, { campus: tab.campus, courseCode: String(row[courseCodeCol] ?? "").trim() });
+      }
     }
   }
   return result;

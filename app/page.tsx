@@ -2,7 +2,7 @@ import Link from "next/link";
 import { TERMS, getCurrentTermSlug } from "@/lib/terms";
 import { loadTermData } from "@/lib/loadTermData";
 import TermStatusPie from "@/components/TermStatusPie";
-import { getCurrentUser, isAdmin } from "@/lib/auth/currentUser";
+import { getCurrentUser, isAdmin, canAccessTerm, canViewDeferments } from "@/lib/auth/currentUser";
 import UserMenu from "@/components/UserMenu";
 
 export const revalidate = Number(process.env.REVALIDATE_SECONDS ?? 120);
@@ -10,22 +10,29 @@ export const revalidate = Number(process.env.REVALIDATE_SECONDS ?? 120);
 export default async function Home() {
   const me = getCurrentUser();
   const campusFilter = me && me.campusScope !== "ALL" ? me.campusScope : undefined;
+  const departmentFilter = me?.departmentScope ?? undefined;
   const currentTermSlug = getCurrentTermSlug();
+  // Term-scoped accounts (e.g. an HOD restricted to the current semester)
+  // never see a card for a term outside their scope at all — not shown
+  // greyed out, just absent, same as the direct-URL block on /terms/[term].
+  const visibleTerms = me ? TERMS.filter((t) => canAccessTerm(me, t.slug)) : TERMS;
   const results = await Promise.all(
-    TERMS.map(async (t) => ({ term: t, data: await loadTermData(t.slug, campusFilter) }))
+    visibleTerms.map(async (t) => ({ term: t, data: await loadTermData(t.slug, campusFilter, departmentFilter) }))
   );
 
   return (
     <div style={styles.page}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div style={styles.eyebrow}>ICMHS · REGISTRAR'S OFFICE</div>
-        {me && <UserMenu displayName={me.displayName} role={me.role} campusScope={me.campusScope} />}
+        {me && <UserMenu displayName={me.displayName} role={me.role} campusScope={me.campusScope} departmentScope={me.departmentScope} termScope={me.termScope} />}
       </div>
       <h1 style={styles.h1}>Student Population Tracker</h1>
       <p style={styles.sub}>Choose a term to view its dashboard.</p>
       <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
         <Link href="/students" style={styles.studentSearchLink}>🔍 Find a student</Link>
-        <Link href="/deferments/admin" style={styles.studentSearchLink}>📄 Deferment Registrar Review</Link>
+        {me && canViewDeferments(me) && (
+          <Link href="/deferments/admin" style={styles.studentSearchLink}>📄 Deferment Registrar Review</Link>
+        )}
         <Link href="/reports" style={styles.studentSearchLink}>📊 Reports</Link>
         {me && isAdmin(me) && <Link href="/admin/users" style={styles.studentSearchLink}>👤 Manage accounts</Link>}
       </div>
@@ -47,6 +54,11 @@ export default async function Home() {
             </Link>
           );
         })}
+        {visibleTerms.length === 0 && (
+          <div style={{ color: "#54625D", fontSize: 13.5 }}>
+            No terms are available for your account yet — ask an admin to check your term access.
+          </div>
+        )}
       </div>
     </div>
   );

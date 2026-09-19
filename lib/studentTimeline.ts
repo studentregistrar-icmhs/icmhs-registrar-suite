@@ -53,8 +53,18 @@ export type StudentProfile = {
  * or omitted value, so navigating here without term context (e.g. the
  * generic /students search) still can't be used to bypass the restriction
  * and edit an arbitrary term.
+ * @param termScope A term-scoped account's allowed term slugs (null/omitted
+ * = unrestricted). Terms outside this set never appear in the timeline at
+ * all, regardless of viewingTermSlug or chronological order — an account
+ * scoped to only Sept-Dec 2026 won't see Jan-Apr/May-Aug entries even as
+ * read-only history. If viewingTermSlug itself isn't in scope, falls back
+ * to the most recent term that is.
  */
-export async function getStudentTimeline(admissionNo: string, viewingTermSlug?: string): Promise<StudentProfile | null> {
+export async function getStudentTimeline(
+  admissionNo: string,
+  viewingTermSlug?: string,
+  termScope?: string[] | null
+): Promise<StudentProfile | null> {
   const loc = await findStudentRow(admissionNo);
   if (!loc) return null;
 
@@ -143,13 +153,24 @@ export async function getStudentTimeline(admissionNo: string, viewingTermSlug?: 
   // Restrict to the viewing term: drop everything after it, and force
   // everything before it to read-only. TERMS is in chronological order, so
   // its index doubles as a timeline for this comparison.
-  const resolvedViewingSlug = viewingTermSlug && TERMS.some((t) => t.slug === viewingTermSlug)
+  const allowedSlugs = termScope && termScope.length > 0 ? new Set(termScope) : null;
+
+  let resolvedViewingSlug = viewingTermSlug && TERMS.some((t) => t.slug === viewingTermSlug)
     ? viewingTermSlug
     : getCurrentTermSlug();
+  if (allowedSlugs && !allowedSlugs.has(resolvedViewingSlug)) {
+    // The default/requested viewing term isn't one this account can see —
+    // fall back to the most recent term it IS allowed to see, same idea as
+    // the unrecognized-slug fallback above just scoped further.
+    const fallback = [...TERMS].reverse().find((t) => allowedSlugs.has(t.slug));
+    if (!fallback) return null; // scoped to term(s) that don't exist in TERMS at all
+    resolvedViewingSlug = fallback.slug;
+  }
   const viewingIndex = TERMS.findIndex((t) => t.slug === resolvedViewingSlug);
 
   const scopedTimeline = timeline
     .filter((entry) => TERMS.findIndex((t) => t.slug === entry.termSlug) <= viewingIndex)
+    .filter((entry) => !allowedSlugs || allowedSlugs.has(entry.termSlug))
     .map((entry) =>
       entry.termSlug === resolvedViewingSlug ? entry : { ...entry, editable: false }
     );
