@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { bulkTagGraduationCohort } from "@/lib/writeStatus";
 import { getCurrentUserFromRequest, isAdmin } from "@/lib/auth/currentUser";
+import { logAudit } from "@/lib/auth/auditLog";
 
 const MAX_ROWS = 2000; // comfortably more than one cohort's worth of graduates
 
@@ -38,6 +39,13 @@ export async function POST(req: NextRequest) {
     // list — cheaper to just revalidate the home page (where every term
     // card lives) than to guess which term slugs are affected.
     revalidatePath("/");
+    const succeeded = result.results.filter((r) => r.ok).length;
+    await logAudit({
+      actorId: me.userId,
+      actorName: me.displayName,
+      action: "cohort_tag",
+      detail: `Tagged ${succeeded} of ${cleanRows.length} students with a graduation cohort`,
+    });
     return NextResponse.json(result);
   }
   return NextResponse.json(result, { status: 400 });

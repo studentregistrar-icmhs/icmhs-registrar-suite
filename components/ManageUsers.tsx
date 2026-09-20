@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import BackLink from "@/components/BackLink";
 import { DEPARTMENTS } from "@/lib/departments";
 import { TERMS } from "@/lib/terms";
@@ -178,7 +179,12 @@ export default function ManageUsers({ currentUserId }: { currentUserId: number }
     <div style={styles.page}>
       <BackLink fallbackHref="/" style={styles.backLink} />
       <div style={styles.eyebrow}>ADMIN</div>
-      <h1 style={styles.h1}>Manage registrar accounts</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 10 }}>
+        <h1 style={styles.h1}>Manage registrar accounts</h1>
+        <Link href="/admin/audit-log" style={{ fontSize: 13, fontWeight: 600, color: C.teal, textDecoration: "none" }}>
+          View audit log →
+        </Link>
+      </div>
 
       {tempPasswordNotice && (
         <div style={styles.tempNotice}>

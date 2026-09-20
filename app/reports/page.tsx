@@ -1,8 +1,10 @@
 import Link from "next/link";
-import BackLink from "@/components/BackLink";
+import { redirect } from "next/navigation";
 import { TERMS } from "@/lib/terms";
 import { getReportingTrend } from "@/lib/reportingTrend";
 import ReportingTrendChart from "@/components/ReportingTrendChart";
+import { getCurrentUser, canAccessTerm } from "@/lib/auth/currentUser";
+import AppNav from "@/components/AppNav";
 
 export const dynamic = "force-dynamic"; // always fetch fresh — never attempt to prerender this at build time
 
@@ -12,17 +14,25 @@ const C = {
 };
 
 export default async function ReportsPage() {
+  const me = getCurrentUser();
+  if (!me) redirect("/login");
+
   // Currently only Sept-Dec 2026 is set up with a dateReportedColumn — this
   // picks whichever configured term comes first, so a future term set up
   // the same way (see lib/terms.ts) starts showing up here automatically,
-  // with no change needed to this page.
-  const reportableTerm = TERMS.find((t) => t.source.kind === "live-column" && t.source.dateReportedColumn);
-  const trend = reportableTerm ? await getReportingTrend(reportableTerm.slug) : null;
+  // with no change needed to this page. A term-scoped account that can't
+  // see that term at all gets the same "not available" state as a term
+  // with no dateReportedColumn — there's nothing to report on for them.
+  const reportableTerm = TERMS.find(
+    (t) => t.source.kind === "live-column" && t.source.dateReportedColumn && canAccessTerm(me, t.slug)
+  );
+  const campusFilter = me.campusScope !== "ALL" ? me.campusScope : undefined;
+  const departmentFilter = me.departmentScope ?? undefined;
+  const trend = reportableTerm ? await getReportingTrend(reportableTerm.slug, campusFilter, departmentFilter) : null;
 
   return (
     <div style={styles.page}>
-      <BackLink fallbackHref="/" style={styles.back} />
-      <div style={styles.eyebrow}>ICMHS · REGISTRAR'S OFFICE</div>
+      <AppNav me={me} active="reports" />
       <h1 style={styles.h1}>Reports</h1>
       <p style={styles.sub}>
         Cross-cutting reports that don't belong to a single term's dashboard. More will land here over time.
@@ -83,8 +93,6 @@ export default async function ReportsPage() {
 
 const styles: Record<string, React.CSSProperties> = {
   page: { fontFamily: "Inter, sans-serif", background: C.bg, color: C.ink, padding: "48px 32px", minHeight: "100vh", boxSizing: "border-box" },
-  back: { fontSize: 13, color: C.teal, textDecoration: "none", fontWeight: 600, display: "inline-block", marginBottom: 18 },
-  eyebrow: { fontFamily: "IBM Plex Mono, monospace", fontSize: 11, letterSpacing: "0.12em", color: C.teal, fontWeight: 600, marginBottom: 6 },
   h1: { fontFamily: "Space Grotesk, sans-serif", fontWeight: 700, fontSize: 32, margin: 0 },
   sub: { fontSize: 14, color: C.slate, marginTop: 8, marginBottom: 28, maxWidth: 620 },
   card: { background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, padding: "22px 24px", maxWidth: 900, boxShadow: "0 1px 3px rgba(18,42,40,0.07)" },

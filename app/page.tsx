@@ -1,9 +1,10 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { TERMS, getCurrentTermSlug } from "@/lib/terms";
 import { loadTermData } from "@/lib/loadTermData";
 import TermStatusPie from "@/components/TermStatusPie";
-import { getCurrentUser, isAdmin, canAccessTerm, canViewDeferments } from "@/lib/auth/currentUser";
-import UserMenu from "@/components/UserMenu";
+import { getCurrentUser, isAdmin, canAccessTerm } from "@/lib/auth/currentUser";
+import AppNav from "@/components/AppNav";
 
 export const revalidate = Number(process.env.REVALIDATE_SECONDS ?? 120);
 
@@ -16,26 +17,38 @@ export default async function Home() {
   // never see a card for a term outside their scope at all — not shown
   // greyed out, just absent, same as the direct-URL block on /terms/[term].
   const visibleTerms = me ? TERMS.filter((t) => canAccessTerm(me, t.slug)) : TERMS;
+
+  // A scoped account (department and/or term restricted, so not an admin —
+  // admins always see every term) with exactly one term to choose from
+  // gets no picker at all: straight to their dashboard. AppNav on every
+  // main page (including the dashboard itself) means they're never
+  // stranded without a way back to Find a student / Reports / etc, which
+  // is what made this redirect safe to add.
+  if (me && !isAdmin(me) && visibleTerms.length === 1) {
+    redirect(`/terms/${visibleTerms[0].slug}`);
+  }
+
   const results = await Promise.all(
     visibleTerms.map(async (t) => ({ term: t, data: await loadTermData(t.slug, campusFilter, departmentFilter) }))
   );
 
+  // A single-department account gets a personalized heading ("School of
+  // Nursing" rather than generic) — purely cosmetic, doesn't affect what
+  // data loads, since that's already scoped regardless of this heading.
+  const deptHeading =
+    departmentFilter && departmentFilter.length === 1 ? departmentFilter[0] : null;
+
   return (
     <div style={styles.page}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+      {me ? (
+        <AppNav me={me} active="home" />
+      ) : (
         <div style={styles.eyebrow}>ICMHS · REGISTRAR'S OFFICE</div>
-        {me && <UserMenu displayName={me.displayName} role={me.role} campusScope={me.campusScope} departmentScope={me.departmentScope} termScope={me.termScope} />}
-      </div>
-      <h1 style={styles.h1}>Student Population Tracker</h1>
-      <p style={styles.sub}>Choose a term to view its dashboard.</p>
-      <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
-        <Link href="/students" style={styles.studentSearchLink}>🔍 Find a student</Link>
-        {me && canViewDeferments(me) && (
-          <Link href="/deferments/admin" style={styles.studentSearchLink}>📄 Deferment Registrar Review</Link>
-        )}
-        <Link href="/reports" style={styles.studentSearchLink}>📊 Reports</Link>
-        {me && isAdmin(me) && <Link href="/admin/users" style={styles.studentSearchLink}>👤 Manage accounts</Link>}
-      </div>
+      )}
+      <h1 style={styles.h1}>{deptHeading ?? "Student Population Tracker"}</h1>
+      <p style={styles.sub}>
+        {deptHeading ? "Student Population Tracker — choose a term to view its dashboard." : "Choose a term to view its dashboard."}
+      </p>
       <div style={styles.grid}>
         {results.map(({ term: t, data }) => {
           const ready = !!data && !data.error;
@@ -73,6 +86,5 @@ const styles: Record<string, React.CSSProperties> = {
   card: { display: "block", background: "#fff", border: "1px solid #D9DFD3", borderRadius: 10, padding: "20px 18px", textDecoration: "none", color: "#122A28", boxShadow: "0 1px 3px rgba(18,42,40,0.07)" },
   cardLabel: { fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 17, marginBottom: 6 },
   cardMeta: { fontFamily: "IBM Plex Mono, monospace", fontSize: 11.5, color: "#54625D", textTransform: "uppercase", letterSpacing: "0.04em" },
-  studentSearchLink: { display: "inline-block", marginBottom: 24, fontSize: 13.5, color: "#0F7268", textDecoration: "none", fontWeight: 600 },
   cardNotReady: { fontSize: 11.5, color: "#98A39C", fontStyle: "italic", marginTop: 14 },
 };

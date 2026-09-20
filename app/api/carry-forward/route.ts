@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { bulkCarryForwardStatuses } from "@/lib/writeStatus";
 import { getCurrentUserFromRequest, isAdmin } from "@/lib/auth/currentUser";
+import { logAudit } from "@/lib/auth/auditLog";
 
 // Admin-only — carry-forward writes to the live sheet for a whole term's
 // worth of students at once, so it's gated the same way as bulk-upload and
@@ -20,6 +21,13 @@ export async function POST(req: NextRequest) {
 
   if (result.ok) {
     revalidatePath(`/terms/${termSlug}`);
+    await logAudit({
+      actorId: me.userId,
+      actorName: me.displayName,
+      action: "carry_forward",
+      termSlug,
+      detail: `Carried forward Graduated/Dropped/Completed: ${result.updated.length} students updated, ${result.alreadySet} already set`,
+    });
     return NextResponse.json(result);
   }
   return NextResponse.json(result, { status: 400 });

@@ -24,5 +24,5 @@ export default async function StudentPage({
   if (!profile || !canAccessCampus(me, profile.campus) || !canAccessDepartment(me, profile.courseCode)) {
     notFound();
   }
-  return <StudentProfile initialProfile={profile} canEdit={me.role !== "viewer"} />;
+  return <StudentProfile initialProfile={profile} canEdit={me.role !== "viewer"} me={me} />;
 }

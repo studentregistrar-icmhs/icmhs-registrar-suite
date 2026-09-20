@@ -4,6 +4,7 @@ import { markUnmarkedStudent } from "@/lib/writeStatus";
 import { findStudentRow } from "@/lib/rosterLookup";
 import { LAYOUT_FOR_WRITE } from "@/lib/parse";
 import { getCurrentUserFromRequest, canEdit, canAccessCampus, canAccessDepartment, canAccessTerm } from "@/lib/auth/currentUser";
+import { logAudit } from "@/lib/auth/auditLog";
 
 export async function POST(req: NextRequest) {
   const me = getCurrentUserFromRequest(req);
@@ -48,6 +49,14 @@ export async function POST(req: NextRequest) {
   if (result.ok) {
     revalidatePath(`/terms/${termSlug}`);
     revalidatePath(`/students/${admissionNo}`);
+    await logAudit({
+      actorId: me.userId,
+      actorName: me.displayName,
+      action: "unmarked_mark",
+      admissionNo,
+      termSlug,
+      detail: `Marked Unmarked student as ${status}`,
+    });
     return NextResponse.json(result);
   }
 

@@ -9,8 +9,22 @@ import { google } from "googleapis";
  * must have Editor access on this specific sheet — it almost certainly
  * already does, since the deferment app writes to column W using the
  * same credentials.
+ *
+ * PERFORMANCE: the auth client and Sheets client are both memoized at
+ * module scope. Before this, getAuth()/getSheetsClient() built a brand
+ * new google.auth.JWT (and therefore re-ran a full OAuth token exchange
+ * with Google) on EVERY SINGLE call — fetchSheetRows, updateRange, etc.
+ * each independently paid that round-trip on top of the actual API call,
+ * which is most of why loading a dashboard felt slow. A serverless
+ * function instance that stays warm between requests (the common case on
+ * Vercel unless it's been idle a while) now reuses the same authenticated
+ * client across requests too, not just within one.
  */
+let cachedAuth: InstanceType<typeof google.auth.JWT> | null = null;
+let cachedSheetsClient: ReturnType<typeof google.sheets> | null = null;
+
 function getAuth() {
+  if (cachedAuth) return cachedAuth;
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   const key = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n");
   if (!email || !key) {
@@ -18,15 +32,18 @@ function getAuth() {
       "Missing GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_PRIVATE_KEY env vars."
     );
   }
-  return new google.auth.JWT({
+  cachedAuth = new google.auth.JWT({
     email,
     key,
     scopes: ["https://www.googleapis.com/auth/spreadsheets"],
   });
+  return cachedAuth;
 }
 
 function getSheetsClient() {
-  return google.sheets({ version: "v4", auth: getAuth() });
+  if (cachedSheetsClient) return cachedSheetsClient;
+  cachedSheetsClient = google.sheets({ version: "v4", auth: getAuth() });
+  return cachedSheetsClient;
 }
 
 function getSheetId(): string {
@@ -35,13 +52,42 @@ function getSheetId(): string {
   return sheetId;
 }
 
+/**
+ * PERFORMANCE: a short-lived read cache, keyed by exact range string. A
+ * single page load routinely asks for the same range more than once — the
+ * home page loads 3 terms in parallel and most of them read the identical
+ * "MAIN CAMPUS!A:AD" / "NAKURU CAMPUS!A:AD", and a term page reads both the
+ * current term and the previous one for the trend comparison. Without this,
+ * every one of those was a separate live round-trip to Google.
+ *
+ * 15s is long enough to dedupe everything a single page load fires off in
+ * parallel (which all happen within milliseconds of each other), short
+ * enough that nobody would notice it as "stale" data even without the
+ * write-time invalidation below. Every write (updateRange/batchUpdateRanges/
+ * appendRow/appendRows) clears the whole cache regardless, so a save is
+ * always reflected on the very next read — this is purely about not
+ * re-fetching the exact same unchanged range several times in one breath.
+ */
+const CACHE_TTL_MS = 15_000;
+const rangeCache = new Map<string, { rows: any[][]; expiresAt: number }>();
+
+function invalidateReadCache(): void {
+  rangeCache.clear();
+}
+
 export async function fetchSheetRows(tabRange: string): Promise<any[][]> {
+  const cached = rangeCache.get(tabRange);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.rows;
+  }
   const res = await getSheetsClient().spreadsheets.values.get({
     spreadsheetId: getSheetId(),
     range: tabRange,
     valueRenderOption: "UNFORMATTED_VALUE",
   });
-  return res.data.values ?? [];
+  const rows = res.data.values ?? [];
+  rangeCache.set(tabRange, { rows, expiresAt: Date.now() + CACHE_TTL_MS });
+  return rows;
 }
 
 /** Overwrites a single range (e.g. "MAIN CAMPUS!S15:Z15") with the given row values. */
@@ -52,6 +98,7 @@ export async function updateRange(range: string, values: any[]): Promise<void> {
     valueInputOption: "RAW",
     requestBody: { values: [values] },
   });
+  invalidateReadCache();
 }
 
 /** Overwrites several ranges in a single API call — used for bulk conflict resolution
@@ -65,6 +112,7 @@ export async function batchUpdateRanges(updates: { range: string; values: any[] 
       data: updates.map((u) => ({ range: u.range, values: [u.values] })),
     },
   });
+  invalidateReadCache();
 }
 
 /** Appends one row to the end of a tab (used for the append-only Status Log). */
@@ -76,6 +124,7 @@ export async function appendRow(tabName: string, values: any[]): Promise<void> {
     insertDataOption: "INSERT_ROWS",
     requestBody: { values: [values] },
   });
+  invalidateReadCache();
 }
 
 /** Appends several rows to the end of a tab in a single API call. */
@@ -88,6 +137,7 @@ export async function appendRows(tabName: string, rows: any[][]): Promise<void> 
     insertDataOption: "INSERT_ROWS",
     requestBody: { values: rows },
   });
+  invalidateReadCache();
 }
 
 // ---------------------------------------------------------------------------

@@ -4,6 +4,7 @@ import { updateStudentStatus } from "@/lib/writeStatus";
 import { findStudentRow } from "@/lib/rosterLookup";
 import { LAYOUT_FOR_WRITE } from "@/lib/parse";
 import { getCurrentUserFromRequest, canEdit, canAccessCampus, canAccessDepartment, canAccessTerm } from "@/lib/auth/currentUser";
+import { logAudit } from "@/lib/auth/auditLog";
 
 export async function POST(
   req: NextRequest,
@@ -55,6 +56,14 @@ export async function POST(
   if (result.ok) {
     revalidatePath(`/terms/${termSlug}`);
     revalidatePath(`/students/${params.admissionNo}`);
+    await logAudit({
+      actorId: me.userId,
+      actorName: me.displayName,
+      action: "status_edit",
+      admissionNo: params.admissionNo,
+      termSlug,
+      detail: `Set status to ${status}${override ? " (override)" : ""}`,
+    });
     return NextResponse.json(result);
   }
 

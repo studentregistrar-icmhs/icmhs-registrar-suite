@@ -1,0 +1,73 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+
+type Result = { admissionNo: string; name: string; courseCode: string; courseName: string; campus: string };
+
+export default function StudentSearch() {
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState<Result[]>([]);
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
+
+  async function search(value: string) {
+    setQ(value);
+    if (value.trim().length < 2) {
+      setResults([]);
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/students/search?q=${encodeURIComponent(value)}`);
+      const json = await res.json();
+      setResults(json.results ?? []);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={styles.wrap}>
+      <h1 style={styles.h1}>Find a student</h1>
+      <input
+        autoFocus
+        value={q}
+        onChange={(e) => search(e.target.value)}
+        placeholder="Search by name or admission number…"
+        style={styles.search}
+      />
+      {loading && <div style={styles.hint}>Searching…</div>}
+      <div style={styles.list}>
+        {results.map((r) => (
+          <div
+            key={r.admissionNo}
+            style={styles.row}
+            onClick={() => router.push(`/students/${encodeURIComponent(r.admissionNo)}`)}
+          >
+            <div>
+              <div style={styles.name}>{r.name}</div>
+              <div style={styles.meta}>{r.admissionNo} · {r.courseName || r.courseCode} · {r.campus}</div>
+            </div>
+            <div style={styles.arrow}>→</div>
+          </div>
+        ))}
+        {!loading && q.trim().length >= 2 && results.length === 0 && (
+          <div style={styles.hint}>No matches.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  wrap: { maxWidth: 640 },
+  h1: { fontFamily: "Space Grotesk, sans-serif", fontWeight: 700, fontSize: 26, margin: "0 0 16px" },
+  search: { border: "1px solid #D9DFD3", borderRadius: 8, padding: "12px 14px", fontSize: 15, width: "100%", boxSizing: "border-box", outline: "none" },
+  hint: { fontSize: 13, color: "#54625D", marginTop: 14 },
+  list: { marginTop: 14, display: "flex", flexDirection: "column", gap: 8 },
+  row: { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", border: "1px solid #D9DFD3", borderRadius: 8, padding: "12px 16px", cursor: "pointer" },
+  name: { fontWeight: 600, fontSize: 14 },
+  meta: { fontSize: 12, color: "#54625D", fontFamily: "IBM Plex Mono, monospace", marginTop: 2 },
+  arrow: { color: "#54625D" },
+};

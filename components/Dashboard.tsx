@@ -11,8 +11,7 @@ import type { ConflictRow } from "@/lib/reconcile";
 import { toCsv, downloadCsv, parseCsv } from "@/lib/csv";
 import { getDepartment } from "@/lib/departments";
 import { parseIntake } from "@/lib/intake";
-import UserMenu from "@/components/UserMenu";
-import BackLink from "@/components/BackLink";
+import AppNav from "@/components/AppNav";
 
 const C = {
   ink: "#122A28", bg: "#EEF1EA", card: "#FFFFFF", line: "#D9DFD3",
@@ -69,6 +68,7 @@ type Props = {
     campusScope: "ALL" | "MAIN" | "NAKURU";
     departmentScope: string[] | null;
     termScope: string[] | null;
+    canViewDeferments: boolean;
     displayName: string;
   };
 };
@@ -740,9 +740,9 @@ export default function Dashboard({
 
   return (
     <div style={styles.page}>
+      <AppNav me={me} />
       <header style={styles.header}>
         <div>
-          <BackLink fallbackHref="/" style={styles.backLink} />
           <div style={styles.eyebrow}>ICMHS · REGISTRAR'S OFFICE · {isLive ? "LIVE" : "STATIC SNAPSHOT"}</div>
           <h1 style={styles.h1}>{termLabel}</h1>
           <div style={styles.sub}>
@@ -752,7 +752,6 @@ export default function Dashboard({
           </div>
         </div>
         <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
-          <UserMenu displayName={me.displayName} role={me.role} campusScope={me.campusScope} departmentScope={me.departmentScope} termScope={me.termScope} />
           <div style={{ position: "relative" }}>
             <input
               value={globalQuery}

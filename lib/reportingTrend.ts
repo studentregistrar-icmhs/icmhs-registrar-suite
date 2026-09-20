@@ -35,7 +35,11 @@ export type ReportingTrendResult =
  * { ok: false, reason: "error" } instead of crashing the page, the same
  * way loadTermData already handles this for the term dashboards.
  */
-export async function getReportingTrend(termSlug: string): Promise<ReportingTrendResult> {
+export async function getReportingTrend(
+  termSlug: string,
+  campusFilter?: "MAIN" | "NAKURU",
+  departmentFilter?: string[]
+): Promise<ReportingTrendResult> {
   const term = getTerm(termSlug);
   if (!term || term.source.kind !== "live-column" || !term.source.dateReportedColumn) {
     return { ok: false, reason: "unsupported-term" };
@@ -49,7 +53,15 @@ export async function getReportingTrend(termSlug: string): Promise<ReportingTren
       fetchSheetRows(`NAKURU CAMPUS!A:${dateCol}`),
     ]);
 
-    const roster = [...parseCampusRows(mainRows, "MAIN"), ...parseCampusRows(nakuruRows, "NAKURU")];
+    let roster = [...parseCampusRows(mainRows, "MAIN"), ...parseCampusRows(nakuruRows, "NAKURU")];
+    // Same scoping as loadTermData: a campus- or department-restricted
+    // account (e.g. an HOD) sees this trend computed purely from their own
+    // slice, not the full college's numbers with a filter on top.
+    if (campusFilter) roster = roster.filter((s) => s.campus === campusFilter);
+    if (departmentFilter && departmentFilter.length > 0) {
+      const allowed = new Set(departmentFilter);
+      roster = roster.filter((s) => allowed.has(getDepartment(s.courseCode)));
+    }
     const period = getTermPeriod(term);
     const inRosterForTerm = roster.filter((s) => !period || !isFutureIntake(s.intakeYear, period));
     const totalRoster = inRosterForTerm.length;

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { bulkUploadStatuses } from "@/lib/writeStatus";
 import { getCurrentUserFromRequest, isAdmin } from "@/lib/auth/currentUser";
+import { logAudit } from "@/lib/auth/auditLog";
 
 const MAX_ROWS = 2000; // generous ceiling — this is meant for lists of tens/hundreds of students
 
@@ -40,6 +41,14 @@ export async function POST(req: NextRequest) {
 
   if (result.ok) {
     revalidatePath(`/terms/${termSlug}`);
+    const succeeded = result.results.filter((r) => r.ok).length;
+    await logAudit({
+      actorId: me.userId,
+      actorName: me.displayName,
+      action: "bulk_upload",
+      termSlug,
+      detail: `CSV bulk upload: ${succeeded} of ${cleanRows.length} rows applied${override ? " (override)" : ""}`,
+    });
     return NextResponse.json(result);
   }
   return NextResponse.json(result, { status: 400 });

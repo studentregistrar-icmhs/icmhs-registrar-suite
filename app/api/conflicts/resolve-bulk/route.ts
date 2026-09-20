@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { resolveLegacyConflictsBulk } from "@/lib/writeStatus";
 import { getCurrentUserFromRequest, isAdmin } from "@/lib/auth/currentUser";
+import { logAudit } from "@/lib/auth/auditLog";
 
 // Admin-only.
 export async function POST(req: NextRequest) {
@@ -26,6 +27,13 @@ export async function POST(req: NextRequest) {
 
   if (succeeded.length > 0) {
     revalidatePath(`/terms/${termSlug}`);
+    await logAudit({
+      actorId: me.userId,
+      actorName: me.displayName,
+      action: "conflict_resolve_bulk",
+      termSlug,
+      detail: `Bulk-resolved ${succeeded.length} of ${admissionNos.length} conflicts`,
+    });
   }
 
   return NextResponse.json({ ok: failed.length === 0, succeeded, failed });

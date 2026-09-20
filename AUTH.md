@@ -39,6 +39,14 @@ computed purely from their own department's students.
      even on a table with existing accounts: everyone keeps their current
      access (unrestricted department/term, Deferments visible) until you
      explicitly change it.
+   - `lib/auth/schema_audit_log.sql` — creates the `registrar_audit_log`
+     table (a new table, doesn't touch `registrar_users` at all). Powers
+     **Manage accounts → View audit log**, which records who did what and
+     when for every status edit, bulk upload, carry-forward run, conflict
+     resolution, and cohort tag. Skip this one and the app keeps working
+     exactly as before — audit logging is best-effort and silently no-ops
+     if this table doesn't exist yet — but the audit log page will show an
+     error until it's run.
 
 2. **Set `SESSION_SECRET`** in Vercel (Project → Settings → Environment
    Variables). This signs every login session — generate one with:
@@ -121,6 +129,19 @@ logging in. Reactivate later if needed.
 - Audit trails ("who marked this student," "who resolved this conflict")
   use the logged-in account's real name automatically, instead of a
   free-typed name field.
+- Every write is now also recorded in a proper, browsable audit log
+  (**Manage accounts → View audit log**) — who, when, what changed, and
+  which student/term — rather than only being visible as the current state
+  of a sheet cell.
+- The Google Sheets client and its auth token are now cached at module
+  scope instead of rebuilt from scratch on every single read/write, and
+  reads are cached for 15 seconds (cleared immediately on any write) — the
+  main fix for dashboards feeling slow to load, since every Sheets call
+  used to independently pay for a fresh OAuth exchange with Google.
+- A shared top nav (Home / Find a student / Reports / Deferments / Manage
+  accounts / account menu) now appears consistently across the app's main
+  pages, and a scoped account with only one term to see skips the term
+  picker and lands straight on their dashboard.
 
 ## Known loose ends
 

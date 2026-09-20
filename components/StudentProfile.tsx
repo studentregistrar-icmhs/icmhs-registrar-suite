@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { StudentProfile as Profile, TimelineEntry } from "@/lib/studentTimeline";
 import { formatSheetDate } from "@/lib/sheetDates";
-import BackLink from "@/components/BackLink";
+import AppNav from "@/components/AppNav";
 
 const STATUS_OPTIONS = [
   "Graduated", "In Session", "Attachment", "Clinicals",
@@ -24,7 +24,22 @@ type LockNotice = {
   graduationCohort?: string;
 };
 
-export default function StudentProfile({ initialProfile, canEdit = true }: { initialProfile: Profile; canEdit?: boolean }) {
+export default function StudentProfile({
+  initialProfile,
+  canEdit = true,
+  me,
+}: {
+  initialProfile: Profile;
+  canEdit?: boolean;
+  me: {
+    displayName: string;
+    role: "admin" | "editor" | "viewer";
+    campusScope: "ALL" | "MAIN" | "NAKURU";
+    departmentScope: string[] | null;
+    termScope: string[] | null;
+    canViewDeferments: boolean;
+  };
+}) {
   const [profile, setProfile] = useState(initialProfile);
   const [pendingTerm, setPendingTerm] = useState<string | null>(null);
   const [pendingStatus, setPendingStatus] = useState<string>("");
@@ -74,7 +89,7 @@ export default function StudentProfile({ initialProfile, canEdit = true }: { ini
 
   return (
     <div style={styles.page}>
-      <BackLink fallbackHref="/students" style={styles.backLink} />
+      <AppNav me={me} active="students" />
       <div style={styles.eyebrow}>{profile.admissionNo}</div>
       <h1 style={styles.h1}>{profile.name}</h1>
       <div style={styles.sub}>{profile.courseName || profile.courseCode} · {profile.campus}{profile.gender ? ` · ${profile.gender}` : ""}</div>
@@ -242,7 +257,6 @@ function TimelineRow({
 
 const styles: Record<string, React.CSSProperties> = {
   page: { fontFamily: "Inter, sans-serif", background: C.bg, color: C.ink, padding: "40px 32px", minHeight: "100vh", boxSizing: "border-box", maxWidth: 640 },
-  backLink: { fontFamily: "IBM Plex Mono, monospace", fontSize: 12, color: C.slate, textDecoration: "none", display: "inline-block", marginBottom: 20, background: "none", border: "none", padding: 0, cursor: "pointer" },
   eyebrow: { fontFamily: "IBM Plex Mono, monospace", fontSize: 12, color: C.teal, fontWeight: 600 },
   h1: { fontFamily: "Space Grotesk, sans-serif", fontWeight: 700, fontSize: 28, margin: "4px 0 0" },
   sub: { fontSize: 13, color: C.slate, marginBottom: 6 },

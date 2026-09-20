@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { bulkMarkUnmarked } from "@/lib/writeStatus";
 import { campusAndCourseForAdmissionNumbers } from "@/lib/rosterLookup";
 import { getCurrentUserFromRequest, canEdit, canAccessCampus, canAccessDepartment, canAccessTerm } from "@/lib/auth/currentUser";
+import { logAudit } from "@/lib/auth/auditLog";
 
 const MAX_ROWS = 500; // this is the Unmarked list, not a CSV upload — a generous but sane ceiling
 
@@ -63,6 +64,14 @@ export async function POST(req: NextRequest) {
 
   if (result.ok) {
     revalidatePath(`/terms/${termSlug}`);
+    const succeeded = result.results.filter((r) => r.ok).length;
+    await logAudit({
+      actorId: me.userId,
+      actorName: me.displayName,
+      action: "unmarked_mark_bulk",
+      termSlug,
+      detail: `Bulk-marked ${succeeded} of ${toProcess.length} selected Unmarked students as ${status}`,
+    });
     return NextResponse.json(result);
   }
   return NextResponse.json(result, { status: 400 });
