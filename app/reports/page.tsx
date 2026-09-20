@@ -28,7 +28,8 @@ export default async function ReportsPage() {
   );
   const campusFilter = me.campusScope !== "ALL" ? me.campusScope : undefined;
   const departmentFilter = me.departmentScope ?? undefined;
-  const trend = reportableTerm ? await getReportingTrend(reportableTerm.slug, campusFilter, departmentFilter) : null;
+  const courseFilter = me.courseScope ?? undefined;
+  const trend = reportableTerm ? await getReportingTrend(reportableTerm.slug, campusFilter, departmentFilter, courseFilter) : null;
 
   return (
     <div style={styles.page}>

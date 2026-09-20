@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { updateStudentStatus } from "@/lib/writeStatus";
 import { findStudentRow } from "@/lib/rosterLookup";
 import { LAYOUT_FOR_WRITE } from "@/lib/parse";
-import { getCurrentUserFromRequest, canEdit, canAccessCampus, canAccessDepartment, canAccessTerm } from "@/lib/auth/currentUser";
+import { getCurrentUserFromRequest, canEdit, canAccessCampus, canAccessDepartment, canAccessCourse, canAccessTerm } from "@/lib/auth/currentUser";
 import { logAudit } from "@/lib/auth/auditLog";
 
 export async function POST(
@@ -40,8 +40,8 @@ export async function POST(
     return NextResponse.json({ ok: false, reason: "That student is outside your assigned campus." }, { status: 403 });
   }
   const courseCode = String(loc.rawRow[LAYOUT_FOR_WRITE[loc.campus].courseCode] ?? "").trim();
-  if (!canAccessDepartment(me, courseCode)) {
-    return NextResponse.json({ ok: false, reason: "That student is outside your assigned department." }, { status: 403 });
+  if (!canAccessDepartment(me, courseCode) || !canAccessCourse(me, courseCode)) {
+    return NextResponse.json({ ok: false, reason: "That student is outside your assigned department/course." }, { status: 403 });
   }
 
   const result = await updateStudentStatus({

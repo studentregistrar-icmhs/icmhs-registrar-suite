@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { getStudentTimeline } from "@/lib/studentTimeline";
 import StudentProfile from "@/components/StudentProfile";
-import { getCurrentUser, canAccessCampus, canAccessDepartment, canAccessTerm } from "@/lib/auth/currentUser";
+import { getCurrentUser, canAccessCampus, canAccessDepartment, canAccessCourse, canAccessTerm } from "@/lib/auth/currentUser";
 
 export default async function StudentPage({
   params,
@@ -21,7 +21,7 @@ export default async function StudentPage({
   const profile = await getStudentTimeline(decodeURIComponent(params.admissionNo), viewingTerm, me.termScope);
   // Same 404 either way (never found vs. out of scope) — a scoped user
   // shouldn't be able to tell "doesn't exist" from "exists but not yours."
-  if (!profile || !canAccessCampus(me, profile.campus) || !canAccessDepartment(me, profile.courseCode)) {
+  if (!profile || !canAccessCampus(me, profile.campus) || !canAccessDepartment(me, profile.courseCode) || !canAccessCourse(me, profile.courseCode)) {
     notFound();
   }
   return <StudentProfile initialProfile={profile} canEdit={me.role !== "viewer"} me={me} />;

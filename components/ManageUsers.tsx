@@ -20,6 +20,7 @@ type UserRow = {
   role: Role;
   campus_scope: CampusScope;
   department_scope: string[] | null;
+  course_scope: string[] | null;
   term_scope: string[] | null;
   can_view_deferments: boolean;
   active: boolean;
@@ -35,6 +36,7 @@ type AccessDraft = {
   role: Role;
   campusScope: CampusScope;
   departmentScope: string[]; // [] here means "all" — converted to null on the wire
+  courseScope: string[];     // [] here means "all" — converted to null on the wire
   termScope: string[];       // [] here means "all" — converted to null on the wire
   canViewDeferments: boolean;
 };
@@ -47,6 +49,7 @@ function draftFromUser(u: UserRow): AccessDraft {
     role: u.role,
     campusScope: u.campus_scope,
     departmentScope: u.department_scope ?? [],
+    courseScope: u.course_scope ?? [],
     termScope: u.term_scope ?? [],
     canViewDeferments: u.can_view_deferments,
   };
@@ -60,6 +63,9 @@ function summarizeAccess(u: UserRow): string {
       ? `${u.department_scope.length} school${u.department_scope.length === 1 ? "" : "s"}`
       : "all schools"
   );
+  if (u.course_scope && u.course_scope.length > 0) {
+    parts.push(`${u.course_scope.length} course${u.course_scope.length === 1 ? "" : "s"}`);
+  }
   parts.push(
     u.term_scope && u.term_scope.length > 0
       ? `${u.term_scope.length} term${u.term_scope.length === 1 ? "" : "s"}`
@@ -78,7 +84,7 @@ export default function ManageUsers({ currentUserId }: { currentUserId: number }
   const [newUsername, setNewUsername] = useState("");
   const [newDisplayName, setNewDisplayName] = useState("");
   const [newAccess, setNewAccess] = useState<AccessDraft>({
-    role: "editor", campusScope: "ALL", departmentScope: [], termScope: [], canViewDeferments: false,
+    role: "editor", campusScope: "ALL", departmentScope: [], courseScope: [], termScope: [], canViewDeferments: false,
   });
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -110,6 +116,7 @@ export default function ManageUsers({ currentUserId }: { currentUserId: number }
           role: newAccess.role,
           campusScope: newAccess.campusScope,
           departmentScope: newAccess.departmentScope,
+          courseScope: newAccess.courseScope,
           termScope: newAccess.termScope,
           canViewDeferments: newAccess.canViewDeferments,
         }),
@@ -122,7 +129,7 @@ export default function ManageUsers({ currentUserId }: { currentUserId: number }
       setTempPasswordNotice({ username: json.user.username, tempPassword: json.tempPassword });
       setNewUsername("");
       setNewDisplayName("");
-      setNewAccess({ role: "editor", campusScope: "ALL", departmentScope: [], termScope: [], canViewDeferments: false });
+      setNewAccess({ role: "editor", campusScope: "ALL", departmentScope: [], courseScope: [], termScope: [], canViewDeferments: false });
       setShowCreate(false);
       await load();
     } finally {
@@ -150,6 +157,7 @@ export default function ManageUsers({ currentUserId }: { currentUserId: number }
         role: draft.role,
         campusScope: draft.campusScope,
         departmentScope: draft.departmentScope,
+        courseScope: draft.courseScope,
         termScope: draft.termScope,
         canViewDeferments: draft.canViewDeferments,
       }),
@@ -382,6 +390,24 @@ function AccessEditor({ draft, onChange }: { draft: AccessDraft; onChange: (d: A
 
           <div style={styles.formRow}>
             <label style={styles.label}>
+              Course scope
+              <span style={styles.labelHint}>
+                {draft.courseScope.length === 0 ? " — all courses" : ` — ${draft.courseScope.length} selected`}
+              </span>
+            </label>
+            <CourseScopeChecklist
+              selected={draft.courseScope}
+              onToggle={(code) => onChange({ ...draft, courseScope: toggle(draft.courseScope, code) })}
+            />
+            <p style={styles.helpText}>
+              One level finer than school scope — for a registrar restricted to a single programme rather
+              than a whole school. Leave unchecked for access to every course. If both school and course
+              scope are set, a student must match both.
+            </p>
+          </div>
+
+          <div style={styles.formRow}>
+            <label style={styles.label}>
               Term scope
               <span style={styles.labelHint}>
                 {draft.termScope.length === 0 ? " — all terms" : ` — ${draft.termScope.length} selected`}
@@ -418,6 +444,75 @@ function AccessEditor({ draft, onChange }: { draft: AccessDraft; onChange: (d: A
         </>
       )}
     </>
+  );
+}
+
+type CourseInfo = { code: string; name: string; department: string };
+
+/**
+ * Fetches the live course list once (from the current roster, via
+ * lib/courses.ts — there's no static list to bundle, courses only have
+ * opaque codes with names that live per-student on the roster) and
+ * renders it grouped by department with a search box, since there are
+ * enough courses across the whole college that a flat checklist would be
+ * unwieldy. Fetched fresh on every mount (each time an access panel is
+ * opened) rather than cached globally — this is an infrequently-used admin
+ * screen, not a hot path, so simplicity wins over avoiding a re-fetch.
+ */
+function CourseScopeChecklist({ selected, onToggle }: { selected: string[]; onToggle: (code: string) => void }) {
+  const [courses, setCourses] = useState<CourseInfo[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    fetch("/api/admin/courses")
+      .then((res) => res.json())
+      .then((json) => {
+        if (json.ok) setCourses(json.courses);
+        else setLoadError(json.reason ?? "Couldn't load the course list.");
+      })
+      .catch(() => setLoadError("Couldn't load the course list."));
+  }, []);
+
+  if (loadError) return <p style={{ fontSize: 12.5, color: C.rose }}>{loadError}</p>;
+  if (!courses) return <p style={{ fontSize: 12.5, color: C.slate }}>Loading courses…</p>;
+
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? courses.filter((c) => c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q))
+    : courses;
+
+  const byDept = new Map<string, CourseInfo[]>();
+  for (const c of filtered) {
+    if (!byDept.has(c.department)) byDept.set(c.department, []);
+    byDept.get(c.department)!.push(c);
+  }
+
+  return (
+    <div>
+      <input
+        style={{ ...styles.input, marginBottom: 6 }}
+        placeholder="Search courses…"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+      <div style={{ ...styles.checkboxList, maxHeight: 220 }}>
+        {Array.from(byDept.entries()).map(([dept, deptCourses]) => (
+          <div key={dept} style={{ marginBottom: 6 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: C.slate, textTransform: "uppercase", letterSpacing: 0.4, margin: "6px 0 2px" }}>
+              {dept}
+            </div>
+            {deptCourses.map((c) => (
+              <label key={c.code} style={styles.checkboxRow}>
+                <input type="checkbox" checked={selected.includes(c.code)} onChange={() => onToggle(c.code)} />
+                {c.name} <span style={{ color: C.slate, fontSize: 11.5 }}>({c.code})</span>
+              </label>
+            ))}
+          </div>
+        ))}
+        {filtered.length === 0 && <div style={{ fontSize: 12.5, color: C.slate, padding: "4px 0" }}>No matching courses.</div>}
+      </div>
+    </div>
   );
 }
 

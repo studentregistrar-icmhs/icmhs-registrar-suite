@@ -104,6 +104,7 @@ export async function middleware(req: NextRequest) {
   forwardedHeaders.set(USER_HEADERS.role, session.role);
   forwardedHeaders.set(USER_HEADERS.campusScope, session.campusScope);
   forwardedHeaders.set(USER_HEADERS.departmentScope, encodeScopeHeader(session.departmentScope));
+  forwardedHeaders.set(USER_HEADERS.courseScope, encodeScopeHeader(session.courseScope));
   forwardedHeaders.set(USER_HEADERS.termScope, encodeScopeHeader(session.termScope));
   forwardedHeaders.set(USER_HEADERS.canViewDeferments, String(session.canViewDeferments));
 

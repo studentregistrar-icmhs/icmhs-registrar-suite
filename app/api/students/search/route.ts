@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchSheetRows } from "@/lib/googleSheets";
 import { parseCampusRows } from "@/lib/parse";
-import { getCurrentUserFromRequest, canAccessCampus, canAccessDepartment } from "@/lib/auth/currentUser";
+import { getCurrentUserFromRequest, canAccessCampus, canAccessDepartment, canAccessCourse } from "@/lib/auth/currentUser";
 
 export async function GET(req: NextRequest) {
   const me = getCurrentUserFromRequest(req);
@@ -24,7 +24,8 @@ export async function GET(req: NextRequest) {
       (s) =>
         (s.admissionNo.toLowerCase().includes(q) || s.name.toLowerCase().includes(q)) &&
         canAccessCampus(me, s.campus) &&
-        canAccessDepartment(me, s.courseCode)
+        canAccessDepartment(me, s.courseCode) &&
+        canAccessCourse(me, s.courseCode)
     )
     .slice(0, 25)
     .map((s) => ({

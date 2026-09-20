@@ -10,6 +10,9 @@ export type CurrentUser = {
   campusScope: CampusScope;
   /** null = every department. Always null (unrestricted) for admins. */
   departmentScope: string[] | null;
+  /** null = every course (by code). One level finer than departmentScope —
+   * see lib/courses.ts. Always null (unrestricted) for admins. */
+  courseScope: string[] | null;
   /** null = every term. Always null (unrestricted) for admins. */
   termScope: string[] | null;
   canViewDeferments: boolean;
@@ -29,6 +32,7 @@ export const USER_HEADERS = {
   // JSON-encoded string arrays (or the literal "null") — see
   // encodeScopeHeader/decodeScopeHeader below.
   departmentScope: "x-registrar-department-scope",
+  courseScope: "x-registrar-course-scope",
   termScope: "x-registrar-term-scope",
   canViewDeferments: "x-registrar-can-view-deferments",
 } as const;
@@ -62,6 +66,7 @@ function buildCurrentUser(get: (name: string) => string | null): CurrentUser | n
     role: role as Role,
     campusScope: (get(USER_HEADERS.campusScope) ?? "ALL") as CampusScope,
     departmentScope: decodeScopeHeader(get(USER_HEADERS.departmentScope)),
+    courseScope: decodeScopeHeader(get(USER_HEADERS.courseScope)),
     termScope: decodeScopeHeader(get(USER_HEADERS.termScope)),
     canViewDeferments: get(USER_HEADERS.canViewDeferments) !== "false",
   };
@@ -99,6 +104,16 @@ export function canAccessCampus(user: CurrentUser, studentCampus: "MAIN" | "NAKU
 export function canAccessDepartment(user: CurrentUser, courseCode: string): boolean {
   if (!user.departmentScope) return true;
   return user.departmentScope.includes(getDepartment(courseCode));
+}
+
+/** Whether `user` is allowed to view/edit a student taking `courseCode`,
+ * checked by exact course code — one level finer than canAccessDepartment.
+ * Unrestricted (null courseScope) passes everyone. Composes with
+ * canAccessDepartment via AND wherever both are checked, same as every
+ * other scoping dimension. */
+export function canAccessCourse(user: CurrentUser, courseCode: string): boolean {
+  if (!user.courseScope) return true;
+  return user.courseScope.includes(courseCode);
 }
 
 /** Whether `user` is allowed to view/edit data for `termSlug` at all.

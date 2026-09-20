@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { bulkMarkUnmarked } from "@/lib/writeStatus";
 import { campusAndCourseForAdmissionNumbers } from "@/lib/rosterLookup";
-import { getCurrentUserFromRequest, canEdit, canAccessCampus, canAccessDepartment, canAccessTerm } from "@/lib/auth/currentUser";
+import { getCurrentUserFromRequest, canEdit, canAccessCampus, canAccessDepartment, canAccessCourse, canAccessTerm } from "@/lib/auth/currentUser";
 import { logAudit } from "@/lib/auth/auditLog";
 
 const MAX_ROWS = 500; // this is the Unmarked list, not a CSV upload — a generous but sane ceiling
@@ -41,12 +41,12 @@ export async function POST(req: NextRequest) {
   // scoped editor's Unmarked list is already filtered to their own
   // scope and this should rarely trigger.
   let toProcess = clean;
-  if (me.campusScope !== "ALL" || me.departmentScope) {
+  if (me.campusScope !== "ALL" || me.departmentScope || me.courseScope) {
     const infoByAdmission = await campusAndCourseForAdmissionNumbers(clean);
     toProcess = clean.filter((a) => {
       const info = infoByAdmission.get(a);
       if (!info) return false;
-      return canAccessCampus(me, info.campus) && canAccessDepartment(me, info.courseCode);
+      return canAccessCampus(me, info.campus) && canAccessDepartment(me, info.courseCode) && canAccessCourse(me, info.courseCode);
     });
   }
   if (toProcess.length === 0) {

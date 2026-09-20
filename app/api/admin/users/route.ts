@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUserFromRequest, isAdmin } from "@/lib/auth/currentUser";
 import { listUsers, createUser, findActiveUserByUsername } from "@/lib/auth/users";
-import { parseDepartmentScope, parseTermScope } from "@/lib/auth/validateScopes";
+import { parseDepartmentScope, parseCourseScope, parseTermScope } from "@/lib/auth/validateScopes";
 import type { Role, CampusScope } from "@/lib/auth/session";
 
 const VALID_ROLES: Role[] = ["admin", "editor", "viewer"];
@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
     role?: string;
     campusScope?: string;
     departmentScope?: string[] | null;
+    courseScope?: string[] | null;
     termScope?: string[] | null;
     canViewDeferments?: boolean;
   };
@@ -53,9 +54,11 @@ export async function POST(req: NextRequest) {
   }
 
   let departmentScope: string[] | null;
+  let courseScope: string[] | null;
   let termScope: string[] | null;
   try {
     departmentScope = parseDepartmentScope(body.departmentScope);
+    courseScope = parseCourseScope(body.courseScope);
     termScope = parseTermScope(body.termScope);
   } catch (err: any) {
     return NextResponse.json({ ok: false, reason: err.message }, { status: 400 });
@@ -71,6 +74,7 @@ export async function POST(req: NextRequest) {
   const isAdminRole = role === "admin";
   const effectiveScope = isAdminRole ? "ALL" : campusScope;
   const effectiveDeptScope = isAdminRole ? null : departmentScope;
+  const effectiveCourseScope = isAdminRole ? null : courseScope;
   const effectiveTermScope = isAdminRole ? null : termScope;
   const effectiveCanViewDeferments = isAdminRole ? true : !!body.canViewDeferments;
 
@@ -80,6 +84,7 @@ export async function POST(req: NextRequest) {
     role,
     campusScope: effectiveScope,
     departmentScope: effectiveDeptScope,
+    courseScope: effectiveCourseScope,
     termScope: effectiveTermScope,
     canViewDeferments: effectiveCanViewDeferments,
   });

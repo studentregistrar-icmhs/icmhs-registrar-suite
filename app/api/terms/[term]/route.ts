@@ -9,7 +9,8 @@ export async function GET(req: NextRequest, { params }: { params: { term: string
   if (!canAccessTerm(me, params.term)) return NextResponse.json({ error: "Unknown term" }, { status: 404 });
   const campusFilter = me.campusScope !== "ALL" ? me.campusScope : undefined;
   const departmentFilter = me.departmentScope ?? undefined;
-  const data = await loadTermData(params.term, campusFilter, departmentFilter);
+  const courseFilter = me.courseScope ?? undefined;
+  const data = await loadTermData(params.term, campusFilter, departmentFilter, courseFilter);
   if (!data) return NextResponse.json({ error: "Unknown term" }, { status: 404 });
   return NextResponse.json(data);
 }
@@ -20,7 +21,8 @@ export async function POST(req: NextRequest, { params }: { params: { term: strin
   if (!canAccessTerm(me, params.term)) return NextResponse.json({ error: "Unknown term" }, { status: 404 });
   const campusFilter = me.campusScope !== "ALL" ? me.campusScope : undefined;
   const departmentFilter = me.departmentScope ?? undefined;
+  const courseFilter = me.courseScope ?? undefined;
   revalidatePath(`/terms/${params.term}`);
-  const data = await loadTermData(params.term, campusFilter, departmentFilter);
+  const data = await loadTermData(params.term, campusFilter, departmentFilter, courseFilter);
   return NextResponse.json({ ok: true, ...data });
 }

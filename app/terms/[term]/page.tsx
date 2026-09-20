@@ -25,12 +25,13 @@ export default async function TermPage({ params }: { params: { term: string } })
   if (!canAccessTerm(me, params.term)) notFound();
   const campusFilter = me.campusScope !== "ALL" ? me.campusScope : undefined;
   const departmentFilter = me.departmentScope ?? undefined;
+  const courseFilter = me.courseScope ?? undefined;
 
   const previousTerm = getPreviousTerm(params.term);
   const [data, previousData] = await Promise.all([
-    loadTermData(params.term, campusFilter, departmentFilter),
+    loadTermData(params.term, campusFilter, departmentFilter, courseFilter),
     previousTerm && canAccessTerm(me, previousTerm.slug)
-      ? loadTermData(previousTerm.slug, campusFilter, departmentFilter)
+      ? loadTermData(previousTerm.slug, campusFilter, departmentFilter, courseFilter)
       : Promise.resolve(null),
   ]);
   if (!data) notFound();

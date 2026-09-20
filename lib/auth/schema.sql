@@ -28,6 +28,15 @@ CREATE TABLE IF NOT EXISTS registrar_users (
   -- exactly — validated in the API route, not by a DB constraint, since
   -- that list can change without a migration.
   department_scope TEXT[],
+  -- NULL or '{}' = every course (no restriction) — the normal case. A
+  -- non-empty array of course CODES (not names — codes are the stable
+  -- identifier; see lib/courses.ts, which derives names live from the
+  -- roster since there's no static course list to validate against)
+  -- restricts an editor/viewer one level finer than department_scope, to
+  -- specific programmes within a school. Composes with department_scope
+  -- via AND like every other scoping dimension. Always effectively
+  -- unrestricted for admins.
+  course_scope TEXT[],
   -- NULL or '{}' = every term (no restriction) — the normal case. A
   -- non-empty array of term slugs (e.g. '{"sept-dec-2026"}') restricts an
   -- editor/viewer to only those term dashboards and only those terms in a

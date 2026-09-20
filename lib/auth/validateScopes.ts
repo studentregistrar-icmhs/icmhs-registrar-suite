@@ -27,3 +27,19 @@ export function parseTermScope(input: unknown): string[] | null {
   if (invalid.length > 0) throw new Error(`Unknown term(s): ${invalid.join(", ")}`);
   return clean;
 }
+
+/** Course scope — unlike department/term, there's no static list of course
+ * codes to validate against (see lib/courses.ts: they're derived live from
+ * the roster, not a config file). The Manage Accounts UI only ever offers
+ * codes it fetched from that live list, so a typo can't reach here through
+ * normal use — this just does light shape-checking (non-empty strings),
+ * not membership validation, to avoid coupling account writes to a live
+ * Sheets fetch. Worth knowing: an entry that doesn't match any real course
+ * (e.g. a stale code after a course is renamed) fails safe — the account
+ * simply sees nothing for that entry, not everything. */
+export function parseCourseScope(input: unknown): string[] | null {
+  if (input == null) return null;
+  if (!Array.isArray(input)) throw new Error("courseScope must be an array.");
+  const clean = input.map((v) => String(v).trim()).filter(Boolean);
+  return clean.length === 0 ? null : clean;
+}

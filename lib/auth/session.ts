@@ -15,6 +15,8 @@ export type SessionPayload = {
   // null/empty = unrestricted. Always effectively unrestricted for admins
   // regardless of what's stored, same convention as campusScope's "ALL".
   departmentScope: string[] | null;
+  // Course CODES, one level finer than departmentScope — see lib/courses.ts.
+  courseScope: string[] | null;
   termScope: string[] | null;
   canViewDeferments: boolean;
   mustResetPassword: boolean;

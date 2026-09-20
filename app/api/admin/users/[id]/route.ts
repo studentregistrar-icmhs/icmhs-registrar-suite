@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUserFromRequest, isAdmin } from "@/lib/auth/currentUser";
 import { setUserActive, updateUserAccess } from "@/lib/auth/users";
-import { parseDepartmentScope, parseTermScope } from "@/lib/auth/validateScopes";
+import { parseDepartmentScope, parseCourseScope, parseTermScope } from "@/lib/auth/validateScopes";
 import type { Role, CampusScope } from "@/lib/auth/session";
 
 const VALID_ROLES: Role[] = ["admin", "editor", "viewer"];
@@ -21,6 +21,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     role?: string;
     campusScope?: string;
     departmentScope?: string[] | null;
+    courseScope?: string[] | null;
     termScope?: string[] | null;
     canViewDeferments?: boolean;
   };
@@ -32,6 +33,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     body.role !== undefined ||
     body.campusScope !== undefined ||
     body.departmentScope !== undefined ||
+    body.courseScope !== undefined ||
     body.termScope !== undefined ||
     body.canViewDeferments !== undefined;
 
@@ -61,9 +63,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
 
     let departmentScope: string[] | null;
+    let courseScope: string[] | null;
     let termScope: string[] | null;
     try {
       departmentScope = parseDepartmentScope(body.departmentScope);
+      courseScope = parseCourseScope(body.courseScope);
       termScope = parseTermScope(body.termScope);
     } catch (err: any) {
       return NextResponse.json({ ok: false, reason: err.message }, { status: 400 });
@@ -74,6 +78,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       role,
       campusScope: isAdminRole ? "ALL" : campusScope,
       departmentScope: isAdminRole ? null : departmentScope,
+      courseScope: isAdminRole ? null : courseScope,
       termScope: isAdminRole ? null : termScope,
       canViewDeferments: isAdminRole ? true : !!body.canViewDeferments,
     });

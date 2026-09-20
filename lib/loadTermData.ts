@@ -47,7 +47,8 @@ const EMPTY_DASHBOARD: DashboardData = {
 export async function loadTermData(
   slug: string,
   campusFilter?: "MAIN" | "NAKURU",
-  departmentFilter?: string[]
+  departmentFilter?: string[],
+  courseFilter?: string[]
 ): Promise<TermData | null> {
   const term = getTerm(slug);
   if (!term) return null;
@@ -86,8 +87,18 @@ export async function loadTermData(
     return rows.filter((r) => allowed.has(getDepartment(r.courseCode)));
   }
 
+  // Course-scoped accounts — one level finer than department scope, for a
+  // registrar restricted to a single programme rather than a whole school.
+  // Same enforcement philosophy, and composes via AND with both campus and
+  // department scoping in scopeStudents below.
+  function scopeToCourse<T extends { courseCode: string }>(rows: T[]): T[] {
+    if (!courseFilter || courseFilter.length === 0) return rows;
+    const allowed = new Set(courseFilter);
+    return rows.filter((r) => allowed.has(r.courseCode));
+  }
+
   function scopeStudents<T extends { campus: "MAIN" | "NAKURU"; courseCode: string }>(rows: T[]): T[] {
-    return scopeToDepartment(scopeToCampus(rows));
+    return scopeToCourse(scopeToDepartment(scopeToCampus(rows)));
   }
 
   try {
@@ -161,14 +172,16 @@ export async function loadTermData(
     const raw = await fs.readFile(filePath, "utf-8");
     const parsed = JSON.parse(raw);
     const dashboard: DashboardData = parsed.dashboard;
-    if (campusFilter || (departmentFilter && departmentFilter.length > 0)) {
+    if (campusFilter || (departmentFilter && departmentFilter.length > 0) || (courseFilter && courseFilter.length > 0)) {
       const deptAllowed = departmentFilter && departmentFilter.length > 0 ? new Set(departmentFilter) : null;
+      const courseAllowed = courseFilter && courseFilter.length > 0 ? new Set(courseFilter) : null;
       const scopedStudentsByStatus: DashboardData["studentsByStatus"] = {};
       for (const [status, list] of Object.entries(dashboard.studentsByStatus ?? {})) {
         scopedStudentsByStatus[status] = (list as any[]).filter(
           (s) =>
             (!campusFilter || s.campus === campusFilter) &&
-            (!deptAllowed || deptAllowed.has(getDepartment(s.courseCode)))
+            (!deptAllowed || deptAllowed.has(getDepartment(s.courseCode))) &&
+            (!courseAllowed || courseAllowed.has(s.courseCode))
         );
       }
       dashboard.studentsByStatus = scopedStudentsByStatus;

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStudentTimeline } from "@/lib/studentTimeline";
-import { getCurrentUserFromRequest, canAccessCampus, canAccessDepartment, canAccessTerm } from "@/lib/auth/currentUser";
+import { getCurrentUserFromRequest, canAccessCampus, canAccessDepartment, canAccessCourse, canAccessTerm } from "@/lib/auth/currentUser";
 
 export async function GET(
   req: NextRequest,
@@ -14,7 +14,7 @@ export async function GET(
   const profile = await getStudentTimeline(params.admissionNo, term, me.termScope);
   // Same 404 either way (never found vs. out of scope) — a scoped user
   // shouldn't be able to tell "doesn't exist" from "exists but not yours."
-  if (!profile || !canAccessCampus(me, profile.campus) || !canAccessDepartment(me, profile.courseCode)) {
+  if (!profile || !canAccessCampus(me, profile.campus) || !canAccessDepartment(me, profile.courseCode) || !canAccessCourse(me, profile.courseCode)) {
     return NextResponse.json({ error: "Student not found" }, { status: 404 });
   }
   return NextResponse.json(profile);

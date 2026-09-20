@@ -12,6 +12,7 @@ export default async function Home() {
   const me = getCurrentUser();
   const campusFilter = me && me.campusScope !== "ALL" ? me.campusScope : undefined;
   const departmentFilter = me?.departmentScope ?? undefined;
+  const courseFilter = me?.courseScope ?? undefined;
   const currentTermSlug = getCurrentTermSlug();
   // Term-scoped accounts (e.g. an HOD restricted to the current semester)
   // never see a card for a term outside their scope at all — not shown
@@ -29,7 +30,7 @@ export default async function Home() {
   }
 
   const results = await Promise.all(
-    visibleTerms.map(async (t) => ({ term: t, data: await loadTermData(t.slug, campusFilter, departmentFilter) }))
+    visibleTerms.map(async (t) => ({ term: t, data: await loadTermData(t.slug, campusFilter, departmentFilter, courseFilter) }))
   );
 
   // A single-department account gets a personalized heading ("School of

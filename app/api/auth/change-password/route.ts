@@ -40,6 +40,7 @@ export async function POST(req: NextRequest) {
     role: user.role,
     campusScope: user.campus_scope,
     departmentScope: user.department_scope,
+    courseScope: user.course_scope,
     termScope: user.term_scope,
     canViewDeferments: user.can_view_deferments,
     mustResetPassword: false,

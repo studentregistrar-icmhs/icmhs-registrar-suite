@@ -2,24 +2,25 @@
 
 Replaces the old shared Basic Auth login and the shared "resolve password"
 with individual registrar accounts (username + password), roles, and
-optional restriction by campus, department/school, term, and access to the
-Deferments module — e.g. an HOD account scoped to just their own school.
+optional restriction by campus, department/school, course/programme, term,
+and access to the Deferments module — e.g. an HOD account scoped to just
+their own school, or a programme lead scoped to just their one programme.
 
 ## Roles and scoping
 
 | Role   | Can do                                                                 | Scoping available |
 |--------|-------------------------------------------------------------------------|---------------|
 | admin  | Everything: edits, CSV bulk upload, carry-forward, cohort tagging/backfill, conflict resolution, managing accounts, Deferments | None — always full access on every dimension |
-| editor | View + edit individual student statuses (profile edits, resolving Unmarked) | Campus, department/school, term, Deferments — each independently, all optional |
+| editor | View + edit individual student statuses (profile edits, resolving Unmarked) | Campus, department/school, course, term, Deferments — each independently, all optional |
 | viewer | Read-only — dashboards, reports, student profiles                      | Same as editor |
 
-The four scoping dimensions are independent and combine with AND — an
+The five scoping dimensions are independent and combine with AND — an
 account can be restricted on any mix of them, or none. A department scope
 of "School of Nursing" plus a term scope of "Sept-Dec 2026" means exactly
 that: this account only ever sees Nursing students, and only for that one
 term, everywhere in the app (dashboards, search, student profiles, Unmarked
 list, exports). Leaving a dimension unset means "no restriction" on that
-one — most accounts will only need one or two of the four set.
+one — most accounts will only need one or two of the five set.
 
 All scoping is enforced server-side — data is filtered before it's even
 assembled into dashboard numbers, not just hidden by the UI. A department-
@@ -39,6 +40,11 @@ computed purely from their own department's students.
      even on a table with existing accounts: everyone keeps their current
      access (unrestricted department/term, Deferments visible) until you
      explicitly change it.
+   - `lib/auth/migration_v3_course_scope.sql` — adds course scope, one
+     level finer than department scope, for a registrar restricted to a
+     single programme rather than a whole school. Same safety guarantee:
+     every existing account gets unrestricted course access until you
+     change it.
    - `lib/auth/schema_audit_log.sql` — creates the `registrar_audit_log`
      table (a new table, doesn't touch `registrar_users` at all). Powers
      **Manage accounts → View audit log**, which records who did what and
@@ -82,6 +88,12 @@ one of these two for anyone who should be restricted at all):
   box unchecked for access to all schools; check just the one(s) this
   person oversees (e.g. an HOD checks only their own school) to restrict
   them to it everywhere in the app.
+- **Course scope**: one level finer, for a registrar restricted to a single
+  programme rather than a whole school — e.g. a programme lead who should
+  only see their one programme, even within a larger school. Searchable and
+  grouped by department, since there are a lot of courses. Leave unchecked
+  for access to every course. If both school and course scope are set on
+  the same account, a student must match both.
 - **Term scope**: a checklist of every term. Leave unchecked for access to
   every term including future ones added later; check specific terms (e.g.
   just the current semester) to restrict what they can see at all — an

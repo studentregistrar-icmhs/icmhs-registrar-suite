@@ -10,6 +10,7 @@ export type UserRow = {
   role: Role;
   campus_scope: CampusScope;
   department_scope: string[] | null;
+  course_scope: string[] | null;
   term_scope: string[] | null;
   can_view_deferments: boolean;
   active: boolean;
@@ -32,7 +33,7 @@ export async function findUserById(userId: number): Promise<UserRow | null> {
 
 export async function listUsers(): Promise<Omit<UserRow, "password_hash">[]> {
   const rows = (await sql`
-    SELECT id, username, display_name, role, campus_scope, department_scope, term_scope,
+    SELECT id, username, display_name, role, campus_scope, department_scope, course_scope, term_scope,
            can_view_deferments, active, must_reset_password, created_at, last_login_at
     FROM registrar_users ORDER BY active DESC, display_name ASC
   `) as Omit<UserRow, "password_hash">[];
@@ -55,9 +56,13 @@ export async function setOwnPassword(userId: number, newPasswordHash: string): P
   `;
 }
 
+function normalizeScope(scope: string[] | null): string[] | null {
+  return scope && scope.length > 0 ? scope : null;
+}
+
 /** Creates a new account with a random temp password (returned, shown once) — the
  * person must change it on first login (must_reset_password starts true).
- * departmentScope/termScope: pass null (or an empty array) for
+ * departmentScope/courseScope/termScope: pass null (or an empty array) for
  * "unrestricted" — either way it's stored as NULL, so canAccess*() only
  * ever has one "no restriction" shape to check for. */
 export async function createUser(opts: {
@@ -66,23 +71,25 @@ export async function createUser(opts: {
   role: Role;
   campusScope: CampusScope;
   departmentScope: string[] | null;
+  courseScope: string[] | null;
   termScope: string[] | null;
   canViewDeferments: boolean;
 }): Promise<{ user: Omit<UserRow, "password_hash">; tempPassword: string }> {
   const tempPassword = generateTempPassword();
   const hash = await hashPassword(tempPassword);
-  const deptScope = opts.departmentScope && opts.departmentScope.length > 0 ? opts.departmentScope : null;
-  const termScope = opts.termScope && opts.termScope.length > 0 ? opts.termScope : null;
+  const deptScope = normalizeScope(opts.departmentScope);
+  const courseScope = normalizeScope(opts.courseScope);
+  const termScope = normalizeScope(opts.termScope);
   const rows = (await sql`
     INSERT INTO registrar_users (
       username, password_hash, display_name, role, campus_scope,
-      department_scope, term_scope, can_view_deferments, must_reset_password
+      department_scope, course_scope, term_scope, can_view_deferments, must_reset_password
     )
     VALUES (
       ${opts.username}, ${hash}, ${opts.displayName}, ${opts.role}, ${opts.campusScope},
-      ${deptScope}, ${termScope}, ${opts.canViewDeferments}, true
+      ${deptScope}, ${courseScope}, ${termScope}, ${opts.canViewDeferments}, true
     )
-    RETURNING id, username, display_name, role, campus_scope, department_scope, term_scope,
+    RETURNING id, username, display_name, role, campus_scope, department_scope, course_scope, term_scope,
               can_view_deferments, active, must_reset_password, created_at, last_login_at
   `) as Omit<UserRow, "password_hash">[];
   return { user: rows[0], tempPassword };
@@ -110,16 +117,18 @@ export async function updateUserAccess(
     role: Role;
     campusScope: CampusScope;
     departmentScope: string[] | null;
+    courseScope: string[] | null;
     termScope: string[] | null;
     canViewDeferments: boolean;
   }
 ): Promise<void> {
-  const deptScope = opts.departmentScope && opts.departmentScope.length > 0 ? opts.departmentScope : null;
-  const termScope = opts.termScope && opts.termScope.length > 0 ? opts.termScope : null;
+  const deptScope = normalizeScope(opts.departmentScope);
+  const courseScope = normalizeScope(opts.courseScope);
+  const termScope = normalizeScope(opts.termScope);
   await sql`
     UPDATE registrar_users
     SET role = ${opts.role}, campus_scope = ${opts.campusScope},
-        department_scope = ${deptScope}, term_scope = ${termScope},
+        department_scope = ${deptScope}, course_scope = ${courseScope}, term_scope = ${termScope},
         can_view_deferments = ${opts.canViewDeferments}, updated_at = now()
     WHERE id = ${userId}
   `;
