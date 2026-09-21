@@ -17,19 +17,31 @@ const GRADUATED_LABEL = STATUS_LABEL.graduation;
 /**
  * Writes a validity date into a live-column term's validityColumn for one
  * student, if that term has one configured. No-op otherwise (including for
- * every other term kind) — safe to call unconditionally. Alongside it, if
- * the term also has a dateReportedColumn configured, stamps that column
- * with today's date (server-side, never user-entered) — an automatic
- * "date reported" record of when this validity entry was made, for
- * accountability.
+ * every other term kind) — safe to call unconditionally.
+ *
+ * `stampDateReported` controls whether dateReportedColumn also gets
+ * today's date. Pass true only when this is a genuine new report — the
+ * student's status is transitioning INTO "In Session" from something else
+ * (Unmarked, Attachment, Deferred, etc). Pass false when the student was
+ * ALREADY "In Session" and this call is just correcting/renewing their
+ * validity date (e.g. they updated their lecture card mid-semester) — the
+ * original report date must be preserved, not overwritten with today.
+ * Callers determine this by checking the student's status BEFORE the
+ * status-column write happens (see updateStudentStatus and
+ * bulkUploadStatuses, which both capture that beforehand).
  */
-async function writeValidityDate(term: ReturnType<typeof getTerm>, admissionNo: string, validityDate: string): Promise<void> {
+async function writeValidityDate(
+  term: ReturnType<typeof getTerm>,
+  admissionNo: string,
+  validityDate: string,
+  stampDateReported: boolean
+): Promise<void> {
   if (!term || term.source.kind !== "live-column" || !term.source.validityColumn) return;
   const loc = await findStudentRow(admissionNo);
   if (!loc) return;
   const tabName = loc.campus === "MAIN" ? "MAIN CAMPUS" : "NAKURU CAMPUS";
   const updates = [{ range: `${tabName}!${term.source.validityColumn}${loc.sheetRowNumber}`, values: [validityDate] }];
-  if (term.source.dateReportedColumn) {
+  if (stampDateReported && term.source.dateReportedColumn) {
     const dateReported = new Date().toISOString().slice(0, 10);
     updates.push({ range: `${tabName}!${term.source.dateReportedColumn}${loc.sheetRowNumber}`, values: [dateReported] });
   }
@@ -133,6 +145,11 @@ export async function updateStudentStatus(opts: {
   }
 
   let result: WriteResult;
+  // Captured before any write below, specifically for the live-column
+  // branch — this is what lets us tell a genuine new report (status was
+  // something else) apart from a mid-semester validity-date correction
+  // (status was already "In Session"). See writeValidityDate's docs.
+  let wasAlreadyInSession = false;
 
   if (term.source.kind === "live-legacy") {
     const loc = await findStudentRow(admissionNo);
@@ -151,6 +168,7 @@ export async function updateStudentStatus(opts: {
   } else if (term.source.kind === "live-column") {
     const loc = await findStudentRow(admissionNo);
     if (!loc) return { ok: false, reason: "not-found" };
+    wasAlreadyInSession = String(loc.rawRow[columnIndex(term.source.column)] ?? "").trim() === IN_SESSION_LABEL;
     const tabName = loc.campus === "MAIN" ? "MAIN CAMPUS" : "NAKURU CAMPUS";
     await updateRange(`${tabName}!${term.source.column}${loc.sheetRowNumber}`, [newStatusLabel]);
     result = { ok: true };
@@ -159,7 +177,7 @@ export async function updateStudentStatus(opts: {
   }
 
   if (result.ok && newKey === "reported" && validityDate && validityDate.trim()) {
-    await writeValidityDate(term, admissionNo, validityDate.trim());
+    await writeValidityDate(term, admissionNo, validityDate.trim(), !wasAlreadyInSession);
   }
   if (result.ok && newKey === "graduation" && graduationCohort && graduationCohort.trim()) {
     await writeGraduationCohort(admissionNo, graduationCohort.trim());
@@ -325,7 +343,10 @@ export async function markUnmarkedStudent(
 
   if (writeResult.ok) {
     if (newStatusLabel === IN_SESSION_LABEL && validityDate) {
-      await writeValidityDate(term, admissionNo, validityDate);
+      // Always a genuine new report here — this function only ever runs
+      // against a student who was Unmarked a moment ago (re-checked above),
+      // never a correction to an already-"In Session" student.
+      await writeValidityDate(term, admissionNo, validityDate, true);
     }
     await appendRow("RESOLVE LOG", [
       new Date().toISOString(),
@@ -451,6 +472,7 @@ export async function bulkUploadStatuses(
   if (!term || term.source.kind !== "live-column") return { ok: false, reason: "unsupported-term" };
 
   const col = term.source.column;
+  const colIdx = columnIndex(col);
   const [mainRows, nakuruRows, logRows] = await Promise.all([
     fetchSheetRows(`MAIN CAMPUS!A:${col}`),
     fetchSheetRows(`NAKURU CAMPUS!A:${col}`),
@@ -551,7 +573,13 @@ export async function bulkUploadStatuses(
     updates.push({ range: `${loc.tab}!${col}${loc.row}`, values: [val] });
     if (val === IN_SESSION_LABEL && validityDate && term.source.validityColumn) {
       updates.push({ range: `${loc.tab}!${term.source.validityColumn}${loc.row}`, values: [validityDate] });
-      if (term.source.dateReportedColumn) {
+      // Same rule as updateStudentStatus: only stamp today's date if this
+      // row is a genuine new report, not a re-upload correcting/renewing
+      // an already-"In Session" student's validity date. loc.rawRow was
+      // fetched before this batch's writes, so it still holds the
+      // pre-write status.
+      const wasAlreadyInSession = String(loc.rawRow[colIdx] ?? "").trim() === IN_SESSION_LABEL;
+      if (!wasAlreadyInSession && term.source.dateReportedColumn) {
         updates.push({ range: `${loc.tab}!${term.source.dateReportedColumn}${loc.row}`, values: [dateReported] });
       }
     }
