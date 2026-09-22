@@ -1835,14 +1835,34 @@ function StudentListPanel({
   const isReportingRate = status === "In Session" && !!unmarkedStudents;
   const isGraduatedPanel = status === "Graduated";
 
+  // Cohort- and department-scoped views of the same list, used to make the
+  // two breakdowns below answer each other: select a cohort and the
+  // department breakdown recomputes for just that cohort (this is the gap
+  // being fixed — it used to always show all cohorts combined, so clicking
+  // a cohort only filtered the raw list at the bottom, not the summary
+  // above it); select a department and the cohort breakdown does the same
+  // in reverse. Neither one filters against its OWN filter (byDept isn't
+  // narrowed by deptFilter, byCohort isn't narrowed by cohortFilter) so
+  // each breakdown stays a stable, clickable set of rows to switch between
+  // rather than collapsing to one row the moment something's selected.
+  const cohortScopedStudents = useMemo(() => {
+    if (!cohortFilter) return students;
+    return students.filter((s) => ((s.graduationCohort ?? "").trim() || "Untagged") === cohortFilter);
+  }, [students, cohortFilter]);
+
+  const deptScopedStudents = useMemo(() => {
+    if (!deptFilter) return students;
+    return students.filter((s) => getDepartment(s.courseCode) === deptFilter);
+  }, [students, deptFilter]);
+
   const byDept = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const s of students) {
+    for (const s of cohortScopedStudents) {
       const d = getDepartment(s.courseCode);
       counts.set(d, (counts.get(d) ?? 0) + 1);
     }
     return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
-  }, [students]);
+  }, [cohortScopedStudents]);
 
   const unmarkedByDept = useMemo(() => {
     const counts = new Map<string, number>();
@@ -1874,7 +1894,7 @@ function StudentListPanel({
   const byCohort = useMemo(() => {
     if (!isGraduatedPanel) return [];
     const counts = new Map<string, number>();
-    for (const s of students) {
+    for (const s of deptScopedStudents) {
       const c = (s.graduationCohort ?? "").trim() || "Untagged";
       counts.set(c, (counts.get(c) ?? 0) + 1);
     }
@@ -1883,7 +1903,7 @@ function StudentListPanel({
       if (b[0] === "Untagged") return -1;
       return b[0].localeCompare(a[0]);
     });
-  }, [isGraduatedPanel, students]);
+  }, [isGraduatedPanel, deptScopedStudents]);
 
   const displayedStudents = useMemo(() => {
     let rows = students;
@@ -1912,10 +1932,10 @@ function StudentListPanel({
         {(byDept.length > 1 || (isReportingRate && reportingRows.length > 1)) && (
           <div style={panelStyles.deptBreakdown}>
             <div style={panelStyles.deptBreakdownTitle}>
-              Breakdown by School/Department {deptFilter && <button style={panelStyles.deptClear} onClick={() => setDeptFilter(null)}>clear filter ✕</button>}
+              Breakdown by School/Department{cohortFilter ? ` — ${cohortFilter} cohort` : ""} {deptFilter && <button style={panelStyles.deptClear} onClick={() => setDeptFilter(null)}>clear filter ✕</button>}
             </div>
             {reportingRows.map(([dept, count]) => {
-              const expected = isReportingRate ? count + (unmarkedByDept.get(dept) ?? 0) : students.length;
+              const expected = isReportingRate ? count + (unmarkedByDept.get(dept) ?? 0) : cohortScopedStudents.length;
               const pct = expected ? Math.round((count / expected) * 100) : 0;
               const active = deptFilter === dept;
               return (
@@ -1959,10 +1979,10 @@ function StudentListPanel({
         {isGraduatedPanel && byCohort.length > 0 && (
           <div style={panelStyles.deptBreakdown}>
             <div style={panelStyles.deptBreakdownTitle}>
-              Breakdown by graduation cohort {cohortFilter && <button style={panelStyles.deptClear} onClick={() => setCohortFilter(null)}>clear filter ✕</button>}
+              Breakdown by graduation cohort{deptFilter ? ` — ${deptFilter}` : ""} {cohortFilter && <button style={panelStyles.deptClear} onClick={() => setCohortFilter(null)}>clear filter ✕</button>}
             </div>
             {byCohort.map(([cohort, count]) => {
-              const pct = students.length ? Math.round((count / students.length) * 100) : 0;
+              const pct = deptScopedStudents.length ? Math.round((count / deptScopedStudents.length) * 100) : 0;
               const active = cohortFilter === cohort;
               return (
                 <div
