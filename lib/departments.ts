@@ -10,6 +10,7 @@ export const DEPARTMENT_BY_COURSE_CODE: Record<string, string> = {
   DPTTT: "School of Perioperative Theatre Technology",
   CHRIT: "School of Health Records & Information Technology",
   KRCHN: "School of Nursing",
+  DCHN: "School of Nursing", // Diploma in Community Health Nursing — new programme; confirm this is ICMHS's actual code for it
   DSL: "School of Applied Sciences",
   CSL: "School of Applied Sciences",
   CHSS: "School of Health and Social Sciences",

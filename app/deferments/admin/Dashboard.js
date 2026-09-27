@@ -4,12 +4,35 @@ import { useEffect, useRef, useState } from "react";
 
 const AUTO_REFRESH_MS = 30 * 1000; // this list needs to feel closer to instant than the term dashboards do
 
+// The fixed set of options on the apply form's "Type of Deferment" field.
+// Anything that doesn't match one of these (blank, or a legacy/free-text
+// value from before the field existed) is bucketed as "Other" rather than
+// silently dropped, so the category breakdown always accounts for every
+// request.
+const KNOWN_CATEGORIES = ["Semester Deferment", "Attachment Deferment", "Maternity Leave"];
+const OTHER_CATEGORY = "Other";
+
+function categoryOf(record) {
+  const v = (record.type_of_deferment || "").trim();
+  return KNOWN_CATEGORIES.includes(v) ? v : OTHER_CATEGORY;
+}
+
+function countBy(list, keyFn) {
+  const counts = {};
+  for (const item of list) {
+    const k = keyFn(item);
+    counts[k] = (counts[k] || 0) + 1;
+  }
+  return counts;
+}
+
 export default function Dashboard() {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [filter, setFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const [openId, setOpenId] = useState(null);
   const [lastLoadedAt, setLastLoadedAt] = useState(null);
   const loadingRef = useRef(false); // guards against overlapping fetches if one is slow
@@ -48,7 +71,18 @@ export default function Dashboard() {
     }
   }
 
-  const filtered = filter === "all" ? requests : requests.filter((r) => r.status === filter);
+  // Status and category filters are independent facets that combine (AND),
+  // so each facet's own counts are computed against the *other* facet's
+  // current selection — that way selecting "Pending" updates the category
+  // counts to "pending requests per category" rather than the flat totals.
+  const statusBase = categoryFilter === "all" ? requests : requests.filter((r) => categoryOf(r) === categoryFilter);
+  const categoryBase = filter === "all" ? requests : requests.filter((r) => r.status === filter);
+  const statusCounts = countBy(statusBase, (r) => r.status);
+  const categoryCounts = countBy(categoryBase, categoryOf);
+
+  const filtered = requests
+    .filter((r) => filter === "all" || r.status === filter)
+    .filter((r) => categoryFilter === "all" || categoryOf(r) === categoryFilter);
 
   function exportPdf() {
     const url = filter === "all" ? "/api/deferments/requests/export" : `/api/deferments/requests/export?status=${filter}`;
@@ -60,18 +94,10 @@ export default function Dashboard() {
 
   return (
     <div>
-      <div className="filters-row">
-        <div className="filters">
-          {["all", "pending", "approved", "denied"].map((f) => (
-            <button
-              key={f}
-              className={"chip" + (filter === f ? " active" : "")}
-              onClick={() => setFilter(f)}
-              type="button"
-            >
-              {f === "all" ? "All" : f.charAt(0).toUpperCase() + f.slice(1)}
-            </button>
-          ))}
+      <div className="stats-bar">
+        <div className="stat-total">
+          <span className="stat-num">{requests.length}</span>
+          <span className="stat-label">Total deferments received</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <span className="refresh-status">
@@ -86,6 +112,39 @@ export default function Dashboard() {
         </div>
       </div>
 
+      <div className="filter-facet">
+        <div className="facet-label">Status</div>
+        <div className="filters">
+          {["all", "pending", "approved", "denied"].map((f) => (
+            <button
+              key={f}
+              className={"chip" + (filter === f ? " active" : "")}
+              onClick={() => setFilter(f)}
+              type="button"
+            >
+              {f === "all" ? "All" : f.charAt(0).toUpperCase() + f.slice(1)}
+              <span className="chip-count">{f === "all" ? statusBase.length : statusCounts[f] || 0}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="filter-facet">
+        <div className="facet-label">Category</div>
+        <div className="filters">
+          {["all", ...KNOWN_CATEGORIES, OTHER_CATEGORY].map((c) => (
+            <button
+              key={c}
+              className={"chip" + (categoryFilter === c ? " active" : "")}
+              onClick={() => setCategoryFilter(c)}
+              type="button"
+            >
+              {c === "all" ? "All types" : c}
+              <span className="chip-count">{c === "all" ? categoryBase.length : categoryCounts[c] || 0}</span>
+            </button>
+          ))}
+        </div>
+      </div>
 
       {filtered.length === 0 ? (
         <div className="empty">No requests here yet.</div>
@@ -112,6 +171,7 @@ function Entry({ record, open, onToggle, onUpdated }) {
   const [notes, setNotes] = useState(record.reviewer_notes || "");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
+  const category = categoryOf(record);
 
   async function setStatus(status) {
     setSaving(true);
@@ -134,16 +194,47 @@ function Entry({ record, open, onToggle, onUpdated }) {
 
   return (
     <div className="entry">
-      <div className="entry-head" onClick={onToggle}>
-        <div>
-          <div className="name">{record.full_name || "Unnamed applicant"}</div>
+      <div className="entry-row">
+        <div className="entry-actions">
+          <button
+            className="approve"
+            disabled={saving || record.status === "approved"}
+            onClick={() => setStatus("approved")}
+          >
+            Approve
+          </button>
+          <button
+            className="deny"
+            disabled={saving || record.status === "denied"}
+            onClick={() => setStatus("denied")}
+          >
+            Deny
+          </button>
+          <button
+            className="reset"
+            disabled={saving || record.status === "pending"}
+            onClick={() => setStatus("pending")}
+          >
+            Reset
+          </button>
+          {err && <span className="err">{err}</span>}
+        </div>
+
+        <div className="entry-summary" onClick={onToggle}>
+          <div className="entry-summary-top">
+            <div className="name">{record.full_name || "Unnamed applicant"}</div>
+            <div className="badges">
+              <span className="category-badge">{category}</span>
+              <span className={`status-badge status-${record.status}`}>
+                {record.status.charAt(0).toUpperCase() + record.status.slice(1)}
+              </span>
+              <span className="chevron">{open ? "▾" : "▸"}</span>
+            </div>
+          </div>
           <div className="meta">
             {record.id} · {record.admission_number || "no admission no."} · {record.program} · filed{" "}
             {new Date(record.submitted_at).toLocaleDateString()}
           </div>
-        </div>
-        <div className={`status-badge status-${record.status}`}>
-          {record.status.charAt(0).toUpperCase() + record.status.slice(1)}
         </div>
       </div>
 
@@ -167,11 +258,7 @@ function Entry({ record, open, onToggle, onUpdated }) {
             <label>Reviewer notes</label>
             <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Internal notes for this request" />
             <div className="action-row">
-              <button className="approve" disabled={saving} onClick={() => setStatus("approved")}>Approve</button>
-              <button className="deny" disabled={saving} onClick={() => setStatus("denied")}>Deny</button>
-              <button className="reset" disabled={saving} onClick={() => setStatus("pending")}>Reset to Pending</button>
               <button className="reset" type="button" onClick={() => window.open(`/api/deferments/requests/${record.id}/export`, "_blank")}>Download PDF</button>
-              {err && <span className="err">{err}</span>}
             </div>
           </div>
         </div>
