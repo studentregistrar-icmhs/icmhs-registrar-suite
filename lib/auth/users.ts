@@ -13,6 +13,9 @@ export type UserRow = {
   course_scope: string[] | null;
   term_scope: string[] | null;
   can_view_deferments: boolean;
+  /** Added by db/migration_v4_disciplinary.sql. Optional in the type so
+   * code keeps working (as "no access") on a database that predates it. */
+  can_view_disciplinary?: boolean;
   active: boolean;
   must_reset_password: boolean;
   created_at: string;
@@ -33,11 +36,15 @@ export async function findUserById(userId: number): Promise<UserRow | null> {
 
 export async function listUsers(): Promise<Omit<UserRow, "password_hash">[]> {
   const rows = (await sql`
-    SELECT id, username, display_name, role, campus_scope, department_scope, course_scope, term_scope,
-           can_view_deferments, active, must_reset_password, created_at, last_login_at
-    FROM registrar_users ORDER BY active DESC, display_name ASC
-  `) as Omit<UserRow, "password_hash">[];
-  return rows;
+    SELECT * FROM registrar_users ORDER BY active DESC, display_name ASC
+  `) as UserRow[];
+  // SELECT * (rather than an explicit column list) so this keeps working
+  // before and after migration_v4 adds can_view_disciplinary; the hash is
+  // stripped here instead.
+  return rows.map(({ password_hash, ...rest }) => ({
+    ...rest,
+    can_view_disciplinary: !!rest.can_view_disciplinary,
+  }));
 }
 
 export async function touchLastLogin(userId: number): Promise<void> {
@@ -74,6 +81,7 @@ export async function createUser(opts: {
   courseScope: string[] | null;
   termScope: string[] | null;
   canViewDeferments: boolean;
+  canViewDisciplinary?: boolean;
 }): Promise<{ user: Omit<UserRow, "password_hash">; tempPassword: string }> {
   const tempPassword = generateTempPassword();
   const hash = await hashPassword(tempPassword);
@@ -92,7 +100,18 @@ export async function createUser(opts: {
     RETURNING id, username, display_name, role, campus_scope, department_scope, course_scope, term_scope,
               can_view_deferments, active, must_reset_password, created_at, last_login_at
   `) as Omit<UserRow, "password_hash">[];
-  return { user: rows[0], tempPassword };
+  // Set separately so account creation still works on a database that hasn't
+  // had migration_v4_disciplinary.sql run yet (the column just doesn't exist).
+  let canViewDisciplinary = false;
+  if (opts.canViewDisciplinary) {
+    try {
+      await sql`UPDATE registrar_users SET can_view_disciplinary = true WHERE id = ${rows[0].id}`;
+      canViewDisciplinary = true;
+    } catch (err) {
+      console.error("Couldn't set can_view_disciplinary (migration_v4 not run?):", err);
+    }
+  }
+  return { user: { ...rows[0], can_view_disciplinary: canViewDisciplinary }, tempPassword };
 }
 
 /** Admin-triggered reset — generates a fresh temp password (returned, shown once)
@@ -120,6 +139,8 @@ export async function updateUserAccess(
     courseScope: string[] | null;
     termScope: string[] | null;
     canViewDeferments: boolean;
+    /** undefined = leave as is */
+    canViewDisciplinary?: boolean;
   }
 ): Promise<void> {
   const deptScope = normalizeScope(opts.departmentScope);
@@ -132,4 +153,7 @@ export async function updateUserAccess(
         can_view_deferments = ${opts.canViewDeferments}, updated_at = now()
     WHERE id = ${userId}
   `;
+  if (opts.canViewDisciplinary !== undefined) {
+    await sql`UPDATE registrar_users SET can_view_disciplinary = ${opts.canViewDisciplinary} WHERE id = ${userId}`;
+  }
 }

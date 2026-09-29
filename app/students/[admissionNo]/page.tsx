@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getStudentTimeline } from "@/lib/studentTimeline";
 import StudentProfile from "@/components/StudentProfile";
 import { getCurrentUser, canAccessCampus, canAccessDepartment, canAccessCourse, canAccessTerm } from "@/lib/auth/currentUser";
+import { canViewDisciplinary } from "@/lib/discipline/access";
 
 export default async function StudentPage({
   params,
@@ -24,5 +25,8 @@ export default async function StudentPage({
   if (!profile || !canAccessCampus(me, profile.campus) || !canAccessDepartment(me, profile.courseCode) || !canAccessCourse(me, profile.courseCode)) {
     notFound();
   }
-  return <StudentProfile initialProfile={profile} canEdit={me.role !== "viewer"} me={me} />;
+  // Decided here on the server (fresh from the database) — the client only
+  // ever receives the yes/no, and the API routes re-check it independently.
+  const showDisciplinary = await canViewDisciplinary(me);
+  return <StudentProfile initialProfile={profile} canEdit={me.role !== "viewer"} canViewDisciplinary={showDisciplinary} me={me} />;
 }

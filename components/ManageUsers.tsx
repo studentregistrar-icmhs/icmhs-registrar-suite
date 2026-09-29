@@ -23,6 +23,7 @@ type UserRow = {
   course_scope: string[] | null;
   term_scope: string[] | null;
   can_view_deferments: boolean;
+  can_view_disciplinary?: boolean;
   active: boolean;
   must_reset_password: boolean;
   created_at: string;
@@ -39,6 +40,7 @@ type AccessDraft = {
   courseScope: string[];     // [] here means "all" — converted to null on the wire
   termScope: string[];       // [] here means "all" — converted to null on the wire
   canViewDeferments: boolean;
+  canViewDisciplinary: boolean;
 };
 
 const ROLE_LABEL: Record<Role, string> = { admin: "Admin", editor: "Editor", viewer: "Viewer" };
@@ -52,6 +54,7 @@ function draftFromUser(u: UserRow): AccessDraft {
     courseScope: u.course_scope ?? [],
     termScope: u.term_scope ?? [],
     canViewDeferments: u.can_view_deferments,
+    canViewDisciplinary: !!u.can_view_disciplinary,
   };
 }
 
@@ -72,6 +75,7 @@ function summarizeAccess(u: UserRow): string {
       : "all terms"
   );
   parts.push(u.can_view_deferments ? "Deferments" : "no Deferments");
+  parts.push(u.can_view_disciplinary ? "Disciplinary" : "no Disciplinary");
   return parts.join(" · ");
 }
 
@@ -84,7 +88,7 @@ export default function ManageUsers({ currentUserId }: { currentUserId: number }
   const [newUsername, setNewUsername] = useState("");
   const [newDisplayName, setNewDisplayName] = useState("");
   const [newAccess, setNewAccess] = useState<AccessDraft>({
-    role: "editor", campusScope: "ALL", departmentScope: [], courseScope: [], termScope: [], canViewDeferments: false,
+    role: "editor", campusScope: "ALL", departmentScope: [], courseScope: [], termScope: [], canViewDeferments: false, canViewDisciplinary: false,
   });
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -119,6 +123,7 @@ export default function ManageUsers({ currentUserId }: { currentUserId: number }
           courseScope: newAccess.courseScope,
           termScope: newAccess.termScope,
           canViewDeferments: newAccess.canViewDeferments,
+          canViewDisciplinary: newAccess.canViewDisciplinary,
         }),
       });
       const json = await res.json();
@@ -129,7 +134,7 @@ export default function ManageUsers({ currentUserId }: { currentUserId: number }
       setTempPasswordNotice({ username: json.user.username, tempPassword: json.tempPassword });
       setNewUsername("");
       setNewDisplayName("");
-      setNewAccess({ role: "editor", campusScope: "ALL", departmentScope: [], courseScope: [], termScope: [], canViewDeferments: false });
+      setNewAccess({ role: "editor", campusScope: "ALL", departmentScope: [], courseScope: [], termScope: [], canViewDeferments: false, canViewDisciplinary: false });
       setShowCreate(false);
       await load();
     } finally {
@@ -160,6 +165,7 @@ export default function ManageUsers({ currentUserId }: { currentUserId: number }
         courseScope: draft.courseScope,
         termScope: draft.termScope,
         canViewDeferments: draft.canViewDeferments,
+        canViewDisciplinary: draft.canViewDisciplinary,
       }),
     });
     const json = await res.json();
@@ -440,6 +446,22 @@ function AccessEditor({ draft, onChange }: { draft: AccessDraft; onChange: (d: A
               />
               Can view the Deferments registrar review area
             </label>
+          </div>
+
+          <div style={styles.formRow}>
+            <label style={styles.checkboxRow}>
+              <input
+                type="checkbox"
+                checked={draft.canViewDisciplinary}
+                onChange={(e) => onChange({ ...draft, canViewDisciplinary: e.target.checked })}
+              />
+              Can view and record student disciplinary cases
+            </label>
+            <p style={styles.helpText}>
+              Off by default. Lets this account read case descriptions on a student's profile (within their
+              campus/school scope) — and, unless they're a Viewer, record cases and suspensions. Takes effect
+              immediately, no re-login needed.
+            </p>
           </div>
         </>
       )}

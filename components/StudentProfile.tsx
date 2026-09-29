@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { StudentProfile as Profile, TimelineEntry } from "@/lib/studentTimeline";
 import { formatSheetDate } from "@/lib/sheetDates";
 import AppNav from "@/components/AppNav";
+import DisciplineSection from "@/components/DisciplineSection";
 
 const STATUS_OPTIONS = [
   "Graduated", "In Session", "Attachment", "Clinicals",
@@ -12,7 +13,7 @@ const STATUS_OPTIONS = [
 
 const C = {
   ink: "#122A28", bg: "#EEF1EA", card: "#FFFFFF", line: "#D9DFD3",
-  teal: "#0F7268", rose: "#B0432E", slate: "#54625D",
+  teal: "#0F7268", rose: "#B0432E", slate: "#54625D", amber: "#C2760F",
 };
 
 type LockNotice = {
@@ -27,10 +28,14 @@ type LockNotice = {
 export default function StudentProfile({
   initialProfile,
   canEdit = true,
+  canViewDisciplinary = false,
   me,
 }: {
   initialProfile: Profile;
   canEdit?: boolean;
+  /** Whether this account may see the Disciplinary section — decided
+   * server-side in the page (see lib/discipline/access.ts), never here. */
+  canViewDisciplinary?: boolean;
   me: {
     displayName: string;
     role: "admin" | "editor" | "viewer";
@@ -79,6 +84,10 @@ export default function StudentProfile({
         await refresh();
       } else if (json.reason === "terminal-lock") {
         setLockNotice({ termSlug, status, blockingTerm: json.blockingTerm, blockingStatus: json.blockingStatus, validityDate, graduationCohort });
+      } else if (json.reason === "suspended-lock") {
+        alert("This student is currently suspended. Their status is managed through the disciplinary case — reinstate them there first.");
+      } else if (json.reason === "suspended-requires-case") {
+        alert("Suspended can only be set by recording a disciplinary case in the Disciplinary section below.");
       } else {
         alert(`Couldn't update status: ${json.reason ?? "unknown error"}`);
       }
@@ -143,6 +152,15 @@ export default function StudentProfile({
         )}
       </div>
 
+      {canViewDisciplinary && (
+        <DisciplineSection
+          admissionNo={profile.admissionNo}
+          termSlug={profile.viewingTermSlug}
+          canEdit={canEdit}
+          onStatusMayHaveChanged={refresh}
+        />
+      )}
+
       {lockNotice && (
         <div style={styles.lockOverlay} onClick={() => setLockNotice(null)}>
           <div style={styles.lockModal} onClick={(e) => e.stopPropagation()}>
@@ -193,6 +211,8 @@ function TimelineRow({
   onSave: () => void;
 }) {
   const isTerminal = entry.status === "Graduated" || entry.status === "Dropped";
+  // Set and cleared only through a disciplinary case, never the status editor.
+  const isSuspended = entry.status === "Suspended";
   const needsValidityDate = pendingStatus === "In Session";
   const canSave = !needsValidityDate || pendingValidityDate.trim() !== "";
   return (
@@ -208,6 +228,9 @@ function TimelineRow({
             {entry.validityDate && entry.dateReported && <span style={{ opacity: 0.5 }}> · </span>}
             {entry.dateReported && <span>Reported {formatSheetDate(entry.dateReported)}</span>}
           </div>
+        )}
+        {isSuspended && (
+          <div style={styles.rowMeta}>Managed through the disciplinary case</div>
         )}
       </div>
       {isPending ? (
@@ -243,10 +266,10 @@ function TimelineRow({
         </div>
       ) : (
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <span style={{ ...styles.statusPill, background: isTerminal ? "#F3E7E4" : "#EAF3EF", color: isTerminal ? C.rose : C.teal }}>
+          <span style={{ ...styles.statusPill, background: isTerminal ? "#F3E7E4" : isSuspended ? "#FBF0DC" : "#EAF3EF", color: isTerminal ? C.rose : isSuspended ? C.amber : C.teal }}>
             {entry.status}
           </span>
-          {entry.editable && canEdit && (
+          {entry.editable && canEdit && !isSuspended && (
             <button style={styles.editBtn} onClick={onStartEdit}>Edit</button>
           )}
         </div>

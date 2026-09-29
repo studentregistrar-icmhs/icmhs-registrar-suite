@@ -14,6 +14,10 @@ export type RawFlags = {
   dropped: boolean;
   completed: boolean;
   nyr: boolean;
+  /** Only ever set through a disciplinary case (see lib/discipline/) — the
+   * legacy Jan-Apr / May-Aug wide-column blocks have no column for it, so
+   * readFlags() below always returns false here. */
+  suspended: boolean;
 };
 
 export type Student = {
@@ -84,6 +88,7 @@ function readFlags(row: any[], start: number): RawFlags {
     dropped: !isBlank(row[start + 5]),
     completed: !isBlank(row[start + 6]),
     nyr: !isBlank(row[start + 7]),
+    suspended: false,
   };
 }
 

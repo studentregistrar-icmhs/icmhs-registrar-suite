@@ -1,7 +1,7 @@
 import { fetchSheetRows, updateRange, appendRow, appendRows, batchUpdateRanges } from "./googleSheets";
 import { findStudentRow } from "./rosterLookup";
 import { getTerm, getPreviousTerm, TERMS } from "./terms";
-import { reconcile, STATUS_LABEL, LABEL_TO_FLAG, TERMINAL_STATUSES, CARRY_FORWARD_STATUSES } from "./reconcile";
+import { reconcile, STATUS_LABEL, LABEL_TO_FLAG, TERMINAL_STATUSES, CARRY_FORWARD_STATUSES, LEGACY_FLAG_KEYS, SUSPENDED_LABEL } from "./reconcile";
 import { readFlagsAt, LAYOUT_FOR_WRITE, parseCampusRows } from "./parse";
 import { inheritedTerminalFlags } from "./statusLog";
 import { columnIndex } from "./columns";
@@ -66,7 +66,9 @@ export type WriteResult =
   | { ok: false; reason: "terminal-lock"; blockingTerm: string; blockingStatus: string }
   | { ok: false; reason: "not-found" }
   | { ok: false; reason: "unsupported-term" }
-  | { ok: false; reason: "invalid-status" };
+  | { ok: false; reason: "invalid-status" }
+  | { ok: false; reason: "suspended-lock" }
+  | { ok: false; reason: "suspended-requires-case" };
 
 /**
  * Checks every live term for this student and returns the first one found
@@ -130,12 +132,22 @@ export async function updateStudentStatus(opts: {
   override?: boolean;
   validityDate?: string;
   graduationCohort?: string;
+  /** True only when called from the disciplinary-case workflow
+   * (lib/discipline/workflow.ts). Suspended can't be set — and a
+   * currently-Suspended cell can't be changed — any other way. */
+  viaDisciplinaryCase?: boolean;
 }): Promise<WriteResult> {
-  const { admissionNo, termSlug, newStatusLabel, override, validityDate, graduationCohort } = opts;
+  const { admissionNo, termSlug, newStatusLabel, override, validityDate, graduationCohort, viaDisciplinaryCase } = opts;
   const term = getTerm(termSlug);
   if (!term) return { ok: false, reason: "unsupported-term" };
   const newKey = LABEL_TO_FLAG[newStatusLabel];
   if (!newKey) return { ok: false, reason: "invalid-status" };
+  if (newKey === "suspended") {
+    if (!viaDisciplinaryCase) return { ok: false, reason: "suspended-requires-case" };
+    // Suspended only has a home in a single-column term; the legacy blocks
+    // have no column for it and writing there would blank the student's flags.
+    if (term.source.kind !== "live-column") return { ok: false, reason: "unsupported-term" };
+  }
 
   if (!override) {
     const blocked = await findTerminalBlock(admissionNo);
@@ -156,7 +168,7 @@ export async function updateStudentStatus(opts: {
     if (!loc) return { ok: false, reason: "not-found" };
     const layout = LAYOUT_FOR_WRITE[loc.campus];
     const startCol = term.source.block === "flagsJanApr" ? layout.janApr : layout.mayAug;
-    const values = (Object.keys(STATUS_LABEL) as (keyof typeof STATUS_LABEL)[]).map((k) =>
+    const values = LEGACY_FLAG_KEYS.map((k) =>
       k === newKey ? STATUS_LABEL[newKey] : "-"
     );
     const range = `${loc.campus === "MAIN" ? "MAIN CAMPUS" : "NAKURU CAMPUS"}!${colLetter(startCol)}${loc.sheetRowNumber}:${colLetter(startCol + 7)}${loc.sheetRowNumber}`;
@@ -168,7 +180,11 @@ export async function updateStudentStatus(opts: {
   } else if (term.source.kind === "live-column") {
     const loc = await findStudentRow(admissionNo);
     if (!loc) return { ok: false, reason: "not-found" };
-    wasAlreadyInSession = String(loc.rawRow[columnIndex(term.source.column)] ?? "").trim() === IN_SESSION_LABEL;
+    const currentLabel = String(loc.rawRow[columnIndex(term.source.column)] ?? "").trim();
+    if (currentLabel === SUSPENDED_LABEL && !viaDisciplinaryCase) {
+      return { ok: false, reason: "suspended-lock" };
+    }
+    wasAlreadyInSession = currentLabel === IN_SESSION_LABEL;
     const tabName = loc.campus === "MAIN" ? "MAIN CAMPUS" : "NAKURU CAMPUS";
     await updateRange(`${tabName}!${term.source.column}${loc.sheetRowNumber}`, [newStatusLabel]);
     result = { ok: true };
@@ -278,7 +294,7 @@ export async function resolveLegacyConflictsBulk(
     const layout = LAYOUT_FOR_WRITE[loc.campus];
     const startCol = term.source.block === "flagsJanApr" ? layout.janApr : layout.mayAug;
     const winningKey = r.canonicalStatus;
-    const values = (Object.keys(STATUS_LABEL) as (keyof typeof STATUS_LABEL)[]).map((k) =>
+    const values = LEGACY_FLAG_KEYS.map((k) =>
       k === winningKey ? STATUS_LABEL[winningKey] : "-"
     );
     const range = `${loc.campus === "MAIN" ? "MAIN CAMPUS" : "NAKURU CAMPUS"}!${colLetter(startCol)}${loc.sheetRowNumber}:${colLetter(startCol + 7)}${loc.sheetRowNumber}`;
@@ -555,10 +571,18 @@ export async function bulkUploadStatuses(
       results.push({ admissionNo: adm, ok: false, reason: "invalid-status", detail: `"${val}" isn't a recognized status` });
       continue;
     }
+    if (val === SUSPENDED_LABEL) {
+      results.push({ admissionNo: adm, ok: false, reason: "invalid-status", detail: "Suspended can only be set by recording a disciplinary case on the student's profile" });
+      continue;
+    }
 
     const loc = byAdmission.get(adm);
     if (!loc) {
       results.push({ admissionNo: adm, ok: false, reason: "not-found" });
+      continue;
+    }
+    if (String(loc.rawRow[colIdx] ?? "").trim() === SUSPENDED_LABEL) {
+      results.push({ admissionNo: adm, ok: false, reason: "invalid-status", detail: "student is currently suspended — reinstate them through their disciplinary case first" });
       continue;
     }
 

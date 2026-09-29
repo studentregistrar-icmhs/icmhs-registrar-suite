@@ -10,7 +10,8 @@ const C = {
 
 type AuditAction =
   | "status_edit" | "unmarked_mark" | "unmarked_mark_bulk" | "bulk_upload"
-  | "carry_forward" | "conflict_resolve" | "conflict_resolve_bulk" | "cohort_tag";
+  | "carry_forward" | "conflict_resolve" | "conflict_resolve_bulk" | "cohort_tag"
+  | "discipline_view" | "discipline_case_open" | "discipline_case_update" | "discipline_reinstate";
 
 type Row = {
   id: number;
@@ -32,6 +33,10 @@ const ACTION_LABEL: Record<AuditAction, string> = {
   conflict_resolve: "Conflict resolved",
   conflict_resolve_bulk: "Conflicts bulk resolved",
   cohort_tag: "Graduation cohort tagged",
+  discipline_view: "Disciplinary record viewed",
+  discipline_case_open: "Disciplinary case opened",
+  discipline_case_update: "Disciplinary case updated",
+  discipline_reinstate: "Suspension: reinstated",
 };
 
 export default function AuditLogView() {

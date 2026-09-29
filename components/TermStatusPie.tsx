@@ -9,6 +9,7 @@ const STATUS_COLORS: Record<string, string> = {
   Attachment: "#6B4FA3",
   Dropped: "#B0432E",
   Deferred: "#C2760F",
+  Suspended: "#B4541A",
   Clinicals: "#8B6BAF",
   "Not Yet Reported": "#98A39C",
   Unmarked: "#C9CFC5",

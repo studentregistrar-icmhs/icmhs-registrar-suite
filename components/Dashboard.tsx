@@ -27,6 +27,7 @@ const STATUS_ORDER = [
   { label: "Attachment", color: C.violet },
   { label: "Dropped", color: C.rose },
   { label: "Deferred", color: C.amber },
+  { label: "Suspended", color: "#B4541A" },
   { label: "Clinicals", color: "#8B6BAF" },
   { label: "Not Yet Reported", color: C.grey },
   { label: "Short Course", color: "#D9B26F" },

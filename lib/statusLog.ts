@@ -14,7 +14,7 @@ import { ReconcilableStudent, LABEL_TO_FLAG, reconcile, TERMINAL_STATUSES } from
 
 const EMPTY_FLAGS: RawFlags = {
   graduation: false, reported: false, attachment: false, clinicals: false,
-  deferred: false, dropped: false, completed: false, nyr: false,
+  deferred: false, dropped: false, completed: false, nyr: false, suspended: false,
 };
 
 function flagsFromLabel(label: string): RawFlags {

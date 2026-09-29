@@ -34,6 +34,7 @@ export const PRECEDENCE: (keyof RawFlags)[] = [
   "dropped",
   "graduation",
   "completed",
+  "suspended",
   "deferred",
   "attachment",
   "clinicals",
@@ -50,7 +51,31 @@ export const STATUS_LABEL: Record<keyof RawFlags, string> = {
   dropped: "Dropped",
   completed: "Completed",
   nyr: "Not Yet Reported",
+  // Keep LAST: the legacy wide-column writers rely on the first 8 keys of
+  // this object being the 8 sheet columns, in order (see LEGACY_FLAG_KEYS).
+  suspended: "Suspended",
 };
+
+/**
+ * The 8 status columns that exist in each legacy Jan-Apr / May-Aug block of
+ * the sheet, in column order. Anything that writes or reads those blocks
+ * positionally MUST use this list, not Object.keys(STATUS_LABEL) —
+ * STATUS_LABEL also holds statuses (Suspended) that have no legacy column,
+ * and writing an extra value would spill into the neighbouring block.
+ */
+export const LEGACY_FLAG_KEYS: (keyof RawFlags)[] = [
+  "graduation", "reported", "attachment", "clinicals",
+  "deferred", "dropped", "completed", "nyr",
+];
+
+/**
+ * Suspended is set and cleared ONLY by the disciplinary-case workflow
+ * (lib/discipline/), so that every suspension has a case, dates and an
+ * audit trail behind it. The generic status editors, bulk upload and
+ * Unmarked flows all refuse to write or overwrite it — see
+ * updateStudentStatus / bulkUploadStatuses in lib/writeStatus.ts.
+ */
+export const SUSPENDED_LABEL = STATUS_LABEL.suspended;
 
 export const LABEL_TO_FLAG: Record<string, keyof RawFlags> = Object.fromEntries(
   (Object.entries(STATUS_LABEL) as [keyof RawFlags, string][]).map(([k, v]) => [v, k])

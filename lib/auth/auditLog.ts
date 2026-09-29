@@ -8,7 +8,11 @@ export type AuditAction =
   | "carry_forward"
   | "conflict_resolve"
   | "conflict_resolve_bulk"
-  | "cohort_tag";
+  | "cohort_tag"
+  | "discipline_view"
+  | "discipline_case_open"
+  | "discipline_case_update"
+  | "discipline_reinstate";
 
 /**
  * Records one audit entry. Best-effort and never throws — a logging
