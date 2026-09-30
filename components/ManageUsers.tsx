@@ -24,6 +24,7 @@ type UserRow = {
   term_scope: string[] | null;
   can_view_deferments: boolean;
   can_view_disciplinary?: boolean;
+  can_view_contacts?: boolean;
   active: boolean;
   must_reset_password: boolean;
   created_at: string;
@@ -41,6 +42,7 @@ type AccessDraft = {
   termScope: string[];       // [] here means "all" — converted to null on the wire
   canViewDeferments: boolean;
   canViewDisciplinary: boolean;
+  canViewContacts: boolean;
 };
 
 const ROLE_LABEL: Record<Role, string> = { admin: "Admin", editor: "Editor", viewer: "Viewer" };
@@ -55,6 +57,7 @@ function draftFromUser(u: UserRow): AccessDraft {
     termScope: u.term_scope ?? [],
     canViewDeferments: u.can_view_deferments,
     canViewDisciplinary: !!u.can_view_disciplinary,
+    canViewContacts: !!u.can_view_contacts,
   };
 }
 
@@ -76,6 +79,7 @@ function summarizeAccess(u: UserRow): string {
   );
   parts.push(u.can_view_deferments ? "Deferments" : "no Deferments");
   parts.push(u.can_view_disciplinary ? "Disciplinary" : "no Disciplinary");
+  parts.push(u.can_view_contacts ? "Contacts" : "no Contacts");
   return parts.join(" · ");
 }
 
@@ -88,7 +92,7 @@ export default function ManageUsers({ currentUserId }: { currentUserId: number }
   const [newUsername, setNewUsername] = useState("");
   const [newDisplayName, setNewDisplayName] = useState("");
   const [newAccess, setNewAccess] = useState<AccessDraft>({
-    role: "editor", campusScope: "ALL", departmentScope: [], courseScope: [], termScope: [], canViewDeferments: false, canViewDisciplinary: false,
+    role: "editor", campusScope: "ALL", departmentScope: [], courseScope: [], termScope: [], canViewDeferments: false, canViewDisciplinary: false, canViewContacts: false,
   });
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -124,6 +128,7 @@ export default function ManageUsers({ currentUserId }: { currentUserId: number }
           termScope: newAccess.termScope,
           canViewDeferments: newAccess.canViewDeferments,
           canViewDisciplinary: newAccess.canViewDisciplinary,
+          canViewContacts: newAccess.canViewContacts,
         }),
       });
       const json = await res.json();
@@ -134,7 +139,7 @@ export default function ManageUsers({ currentUserId }: { currentUserId: number }
       setTempPasswordNotice({ username: json.user.username, tempPassword: json.tempPassword });
       setNewUsername("");
       setNewDisplayName("");
-      setNewAccess({ role: "editor", campusScope: "ALL", departmentScope: [], courseScope: [], termScope: [], canViewDeferments: false, canViewDisciplinary: false });
+      setNewAccess({ role: "editor", campusScope: "ALL", departmentScope: [], courseScope: [], termScope: [], canViewDeferments: false, canViewDisciplinary: false, canViewContacts: false });
       setShowCreate(false);
       await load();
     } finally {
@@ -166,6 +171,7 @@ export default function ManageUsers({ currentUserId }: { currentUserId: number }
         termScope: draft.termScope,
         canViewDeferments: draft.canViewDeferments,
         canViewDisciplinary: draft.canViewDisciplinary,
+        canViewContacts: draft.canViewContacts,
       }),
     });
     const json = await res.json();
@@ -461,6 +467,22 @@ function AccessEditor({ draft, onChange }: { draft: AccessDraft; onChange: (d: A
               Off by default. Lets this account read case descriptions on a student's profile (within their
               campus/school scope) — and, unless they're a Viewer, record cases and suspensions. Takes effect
               immediately, no re-login needed.
+            </p>
+          </div>
+
+          <div style={styles.formRow}>
+            <label style={styles.checkboxRow}>
+              <input
+                type="checkbox"
+                checked={draft.canViewContacts}
+                onChange={(e) => onChange({ ...draft, canViewContacts: e.target.checked })}
+              />
+              Can view student contacts (phone numbers / emails)
+            </label>
+            <p style={styles.helpText}>
+              Off by default. Without it, contact details are removed on the server everywhere — dashboards,
+              student lists, conflict list, CSV exports, student profiles and the Deferments review area. Takes
+              effect immediately, no re-login needed.
             </p>
           </div>
         </>

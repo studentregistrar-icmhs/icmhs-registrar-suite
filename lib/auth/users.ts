@@ -16,6 +16,9 @@ export type UserRow = {
   /** Added by db/migration_v4_disciplinary.sql. Optional in the type so
    * code keeps working (as "no access") on a database that predates it. */
   can_view_disciplinary?: boolean;
+  /** Added by db/migration_v5_contacts.sql. Optional in the type so code
+   * keeps working (as "no access") on a database that predates it. */
+  can_view_contacts?: boolean;
   active: boolean;
   must_reset_password: boolean;
   created_at: string;
@@ -44,6 +47,7 @@ export async function listUsers(): Promise<Omit<UserRow, "password_hash">[]> {
   return rows.map(({ password_hash, ...rest }) => ({
     ...rest,
     can_view_disciplinary: !!rest.can_view_disciplinary,
+    can_view_contacts: !!rest.can_view_contacts,
   }));
 }
 
@@ -82,6 +86,7 @@ export async function createUser(opts: {
   termScope: string[] | null;
   canViewDeferments: boolean;
   canViewDisciplinary?: boolean;
+  canViewContacts?: boolean;
 }): Promise<{ user: Omit<UserRow, "password_hash">; tempPassword: string }> {
   const tempPassword = generateTempPassword();
   const hash = await hashPassword(tempPassword);
@@ -111,7 +116,20 @@ export async function createUser(opts: {
       console.error("Couldn't set can_view_disciplinary (migration_v4 not run?):", err);
     }
   }
-  return { user: { ...rows[0], can_view_disciplinary: canViewDisciplinary }, tempPassword };
+  // Same reasoning for can_view_contacts (migration_v5_contacts.sql).
+  let canViewContacts = false;
+  if (opts.canViewContacts) {
+    try {
+      await sql`UPDATE registrar_users SET can_view_contacts = true WHERE id = ${rows[0].id}`;
+      canViewContacts = true;
+    } catch (err) {
+      console.error("Couldn't set can_view_contacts (migration_v5 not run?):", err);
+    }
+  }
+  return {
+    user: { ...rows[0], can_view_disciplinary: canViewDisciplinary, can_view_contacts: canViewContacts },
+    tempPassword,
+  };
 }
 
 /** Admin-triggered reset — generates a fresh temp password (returned, shown once)
@@ -141,6 +159,8 @@ export async function updateUserAccess(
     canViewDeferments: boolean;
     /** undefined = leave as is */
     canViewDisciplinary?: boolean;
+    /** undefined = leave as is */
+    canViewContacts?: boolean;
   }
 ): Promise<void> {
   const deptScope = normalizeScope(opts.departmentScope);
@@ -155,5 +175,8 @@ export async function updateUserAccess(
   `;
   if (opts.canViewDisciplinary !== undefined) {
     await sql`UPDATE registrar_users SET can_view_disciplinary = ${opts.canViewDisciplinary} WHERE id = ${userId}`;
+  }
+  if (opts.canViewContacts !== undefined) {
+    await sql`UPDATE registrar_users SET can_view_contacts = ${opts.canViewContacts} WHERE id = ${userId}`;
   }
 }

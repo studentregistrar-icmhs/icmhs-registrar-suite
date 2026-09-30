@@ -65,6 +65,9 @@ type Props = {
   apiTermSlug: string;
   previousTermLabel?: string;
   previousData?: DashboardData | null;
+  /** Server-decided (lib/contacts/access.ts). The contact data itself is already
+   * blanked server-side when false; this just removes the empty columns. */
+  canViewContacts?: boolean;
   me: {
     role: "admin" | "editor" | "viewer";
     campusScope: "ALL" | "MAIN" | "NAKURU";
@@ -78,7 +81,7 @@ type Props = {
 const AUTO_REFRESH_MS = 3 * 60 * 1000;
 
 export default function Dashboard({
-  initialData, initialConflicts, termLabel, isLive, canCarryForward, isColumnTerm, apiTermSlug, previousTermLabel, previousData, me,
+  initialData, initialConflicts, termLabel, isLive, canCarryForward, isColumnTerm, apiTermSlug, previousTermLabel, previousData, me, canViewContacts = false,
 }: Props) {
   const [data, setData] = useState(initialData);
   const [conflicts, setConflicts] = useState(initialConflicts);
@@ -442,8 +445,8 @@ export default function Dashboard({
   }, [conflicts]);
 
   function exportConflicts() {
-    const headers = ["Admission No.", "Name", "Campus", "Course", "Contacts", "Flags Set", "Resolved To"];
-    const rows = conflicts.map((c) => [c.admissionNo, c.name, c.campus, c.courseCode, c.contacts, c.setStatuses.join("; "), c.resolvedTo]);
+    const headers = ["Admission No.", "Name", "Campus", "Course", ...(canViewContacts ? ["Contacts"] : []), "Flags Set", "Resolved To"];
+    const rows = conflicts.map((c) => [c.admissionNo, c.name, c.campus, c.courseCode, ...(canViewContacts ? [c.contacts] : []), c.setStatuses.join("; "), c.resolvedTo]);
     downloadCsv(`${termLabel.replace(/\s+/g, "-")}-conflicts.csv`, toCsv(headers, rows));
   }
 
@@ -1150,7 +1153,7 @@ export default function Dashboard({
                     <th style={{ ...styles.th, textAlign: "left" }}>Name</th>
                     <th style={styles.th}>Campus</th>
                     <th style={styles.th}>Course</th>
-                    <th style={{ ...styles.th, textAlign: "left" }}>Contacts</th>
+                    {canViewContacts && <th style={{ ...styles.th, textAlign: "left" }}>Contacts</th>}
                     <th style={{ ...styles.th, textAlign: "left" }}>Flags Set</th>
                     <th style={{ ...styles.th, textAlign: "left" }}>Resolved To</th>
                     <th style={styles.th}></th>
@@ -1167,7 +1170,7 @@ export default function Dashboard({
                       <td style={styles.tdName}>{c.name}</td>
                       <td style={styles.tdNum}>{c.campus}</td>
                       <td style={styles.tdNum}>{c.courseCode}</td>
-                      <td style={styles.tdName}>{c.contacts || "—"}</td>
+                      {canViewContacts && <td style={styles.tdName}>{c.contacts || "—"}</td>}
                       <td style={{ ...styles.tdName, color: C.rose }}>{c.setStatuses.join(", ")}</td>
                       <td style={{ ...styles.tdName, fontWeight: 600 }}>{c.resolvedTo}</td>
                       <td style={styles.tdNum}>
@@ -1433,6 +1436,7 @@ export default function Dashboard({
           students={studentPanelList}
           unmarkedStudents={unmarkedPanelList}
           termSlug={apiTermSlug}
+          canViewContacts={canViewContacts}
           onOpenCohortTag={selectedStatus === "Graduated" && me.role === "admin" ? () => setCohortTagOpen(true) : undefined}
           query={studentQuery}
           onQueryChange={setStudentQuery}
@@ -1828,8 +1832,10 @@ function StudentListPanel({
   onClose,
   onOpenCohortTag,
   fullPageHref,
+  canViewContacts,
 }: {
   status: string;
+  canViewContacts?: boolean;
   students: { admissionNo: string; name: string; courseCode: string; courseName: string; campus: string; contacts: string; graduationCohort?: string }[];
   /** Unmarked students in the same current filter scope, for the "In Session"
    * reporting-rate denominator below. Empty/unused for every other status. */
@@ -1857,6 +1863,7 @@ function StudentListPanel({
           onClose={onClose}
           onOpenCohortTag={onOpenCohortTag}
           fullPageHref={fullPageHref}
+          canViewContacts={canViewContacts}
         />
       </div>
     </div>

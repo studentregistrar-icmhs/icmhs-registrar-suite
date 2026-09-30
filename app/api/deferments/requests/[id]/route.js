@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { sql } from "@/lib/deferments/db";
 import { mirrorDefermentStatusToCampusTab } from "@/lib/googleSheets";
+import { getCurrentUserFromRequest } from "@/lib/auth/currentUser";
+import { canViewContacts } from "@/lib/contacts/access";
+import { redactDefermentRows } from "@/lib/contacts/redact";
 // updateDefermentStatusInSheet (writes to the "STATUS LOG" tab) is no longer
 // called here — as of Sept-Dec 2026 that tab is retired in favour of the
 // single status column (CAMPUS_STATUS_MIRROR_COLUMN) on the campus tabs
@@ -52,7 +55,8 @@ export async function PATCH(request, context) {
     } catch (sheetErr) {
       console.error("Google Sheets update failed:", sheetErr);
     }
-    return NextResponse.json({ request: rows[0], sheetWarning });
+    const allowed = await canViewContacts(getCurrentUserFromRequest(request));
+    return NextResponse.json({ request: redactDefermentRows([rows[0]], allowed)[0], sheetWarning });
   } catch (err) {
     console.error("Update failed:", err);
     return NextResponse.json({ error: "Could not update request." }, { status: 500 });

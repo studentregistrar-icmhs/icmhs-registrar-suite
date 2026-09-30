@@ -25,6 +25,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     termScope?: string[] | null;
     canViewDeferments?: boolean;
     canViewDisciplinary?: boolean;
+    canViewContacts?: boolean;
   };
 
   // Whenever any access field changes, all of them are expected together —
@@ -37,7 +38,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     body.courseScope !== undefined ||
     body.termScope !== undefined ||
     body.canViewDeferments !== undefined ||
-    body.canViewDisciplinary !== undefined;
+    body.canViewDisciplinary !== undefined ||
+    body.canViewContacts !== undefined;
 
   // An admin can't deactivate or change the access of their OWN account
   // through this route — prevents accidentally locking yourself out with
@@ -84,6 +86,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       termScope: isAdminRole ? null : termScope,
       canViewDeferments: isAdminRole ? true : !!body.canViewDeferments,
       canViewDisciplinary: isAdminRole ? true : body.canViewDisciplinary === undefined ? undefined : !!body.canViewDisciplinary,
+      canViewContacts: isAdminRole ? true : body.canViewContacts === undefined ? undefined : !!body.canViewContacts,
     });
   }
 

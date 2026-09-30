@@ -3,6 +3,8 @@ import { getStudentTimeline } from "@/lib/studentTimeline";
 import StudentProfile from "@/components/StudentProfile";
 import { getCurrentUser, canAccessCampus, canAccessDepartment, canAccessCourse, canAccessTerm } from "@/lib/auth/currentUser";
 import { canViewDisciplinary } from "@/lib/discipline/access";
+import { canViewContacts } from "@/lib/contacts/access";
+import { redactProfile } from "@/lib/contacts/redact";
 
 export default async function StudentPage({
   params,
@@ -28,5 +30,6 @@ export default async function StudentPage({
   // Decided here on the server (fresh from the database) — the client only
   // ever receives the yes/no, and the API routes re-check it independently.
   const showDisciplinary = await canViewDisciplinary(me);
-  return <StudentProfile initialProfile={profile} canEdit={me.role !== "viewer"} canViewDisciplinary={showDisciplinary} me={me} />;
+  const showContacts = await canViewContacts(me);
+  return <StudentProfile initialProfile={redactProfile(profile, showContacts)} canViewContacts={showContacts} canEdit={me.role !== "viewer"} canViewDisciplinary={showDisciplinary} me={me} />;
 }

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { loadTermData } from "@/lib/loadTermData";
 import { getCurrentUserFromRequest, canAccessTerm } from "@/lib/auth/currentUser";
+import { canViewContacts } from "@/lib/contacts/access";
+import { redactTermData } from "@/lib/contacts/redact";
 
 export async function GET(req: NextRequest, { params }: { params: { term: string } }) {
   const me = getCurrentUserFromRequest(req);
@@ -10,7 +12,7 @@ export async function GET(req: NextRequest, { params }: { params: { term: string
   const campusFilter = me.campusScope !== "ALL" ? me.campusScope : undefined;
   const departmentFilter = me.departmentScope ?? undefined;
   const courseFilter = me.courseScope ?? undefined;
-  const data = await loadTermData(params.term, campusFilter, departmentFilter, courseFilter);
+  const data = redactTermData(await loadTermData(params.term, campusFilter, departmentFilter, courseFilter), await canViewContacts(me));
   if (!data) return NextResponse.json({ error: "Unknown term" }, { status: 404 });
   return NextResponse.json(data);
 }
@@ -23,6 +25,6 @@ export async function POST(req: NextRequest, { params }: { params: { term: strin
   const departmentFilter = me.departmentScope ?? undefined;
   const courseFilter = me.courseScope ?? undefined;
   revalidatePath(`/terms/${params.term}`);
-  const data = await loadTermData(params.term, campusFilter, departmentFilter, courseFilter);
+  const data = redactTermData(await loadTermData(params.term, campusFilter, departmentFilter, courseFilter), await canViewContacts(me));
   return NextResponse.json({ ok: true, ...data });
 }

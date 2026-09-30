@@ -32,6 +32,7 @@ export async function POST(req: NextRequest) {
     termScope?: string[] | null;
     canViewDeferments?: boolean;
     canViewDisciplinary?: boolean;
+    canViewContacts?: boolean;
   };
   const username = (body.username ?? "").trim();
   const displayName = (body.displayName ?? "").trim();
@@ -89,6 +90,7 @@ export async function POST(req: NextRequest) {
     termScope: effectiveTermScope,
     canViewDeferments: effectiveCanViewDeferments,
     canViewDisciplinary: isAdminRole ? true : !!body.canViewDisciplinary,
+    canViewContacts: isAdminRole ? true : !!body.canViewContacts,
   });
   return NextResponse.json({ ok: true, user, tempPassword });
 }

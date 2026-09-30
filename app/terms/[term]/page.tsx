@@ -5,6 +5,8 @@ import { getTerm, getPreviousTerm, TERMS } from "@/lib/terms";
 import { loadTermData } from "@/lib/loadTermData";
 import { getCurrentUser, canAccessTerm } from "@/lib/auth/currentUser";
 import BackLink from "@/components/BackLink";
+import { canViewContacts } from "@/lib/contacts/access";
+import { redactTermData } from "@/lib/contacts/redact";
 
 export const revalidate = Number(process.env.REVALIDATE_SECONDS ?? 120);
 
@@ -28,12 +30,16 @@ export default async function TermPage({ params }: { params: { term: string } })
   const courseFilter = me.courseScope ?? undefined;
 
   const previousTerm = getPreviousTerm(params.term);
-  const [data, previousData] = await Promise.all([
+  const showContacts = await canViewContacts(me);
+  const [rawData, rawPreviousData] = await Promise.all([
     loadTermData(params.term, campusFilter, departmentFilter, courseFilter),
     previousTerm && canAccessTerm(me, previousTerm.slug)
       ? loadTermData(previousTerm.slug, campusFilter, departmentFilter, courseFilter)
       : Promise.resolve(null),
   ]);
+  // Contacts are stripped here on the server, before anything is serialised to the browser.
+  const data = redactTermData(rawData, showContacts);
+  const previousData = redactTermData(rawPreviousData, showContacts);
   if (!data) notFound();
 
   if (data.error) {
@@ -63,6 +69,7 @@ export default async function TermPage({ params }: { params: { term: string } })
       previousTermLabel={previousTerm && canAccessTerm(me, previousTerm.slug) ? previousTerm.label : undefined}
       previousData={previousData && !previousData.error ? previousData.dashboard : null}
       me={me}
+      canViewContacts={showContacts}
     />
   );
 }

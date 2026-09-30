@@ -28,6 +28,7 @@ function countBy(list, keyFn) {
 
 export default function Dashboard() {
   const [requests, setRequests] = useState([]);
+  const [contactsHidden, setContactsHidden] = useState(true); // fail closed until the server says otherwise
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -61,6 +62,7 @@ export default function Dashboard() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Could not load requests.");
       setRequests(data.requests);
+      setContactsHidden(data.contactsHidden !== false);
       setLastLoadedAt(new Date());
     } catch (err) {
       setLoadError(err.message);
@@ -154,6 +156,7 @@ export default function Dashboard() {
             <Entry
               key={r.id}
               record={r}
+              contactsHidden={contactsHidden}
               open={openId === r.id}
               onToggle={() => setOpenId(openId === r.id ? null : r.id)}
               onUpdated={(updated) => {
@@ -167,7 +170,7 @@ export default function Dashboard() {
   );
 }
 
-function Entry({ record, open, onToggle, onUpdated }) {
+function Entry({ record, contactsHidden, open, onToggle, onUpdated }) {
   const [notes, setNotes] = useState(record.reviewer_notes || "");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
@@ -243,8 +246,8 @@ function Entry({ record, open, onToggle, onUpdated }) {
         <div className="entry-body">
           <div className="detail-grid">
             <Detail k="Admission Number" v={record.admission_number} />
-            <Detail k="Email" v={record.email} />
-            <Detail k="Phone" v={record.phone} />
+            {!contactsHidden && <Detail k="Email" v={record.email} />}
+            {!contactsHidden && <Detail k="Phone" v={record.phone} />}
             <Detail k="Campus" v={record.campus} />
             <Detail k="Application Date" v={record.application_date} />
             <Detail k="Type of Deferment" v={record.type_of_deferment} />

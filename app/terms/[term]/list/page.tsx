@@ -3,6 +3,8 @@ import StudentListPage from "@/components/StudentListPage";
 import { getTerm } from "@/lib/terms";
 import { loadTermData } from "@/lib/loadTermData";
 import { getCurrentUser, canAccessTerm } from "@/lib/auth/currentUser";
+import { canViewContacts } from "@/lib/contacts/access";
+import { redactTermData } from "@/lib/contacts/redact";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +28,8 @@ export default async function TermStudentListPage({
   const departmentFilter = me.departmentScope ?? undefined;
   const courseFilter = me.courseScope ?? undefined;
 
-  const data = await loadTermData(params.term, campusFilter, departmentFilter, courseFilter);
+  const showContacts = await canViewContacts(me);
+  const data = redactTermData(await loadTermData(params.term, campusFilter, departmentFilter, courseFilter), showContacts);
   if (!data || data.error) redirect(`/terms/${params.term}`);
 
   // No status means this wasn't reached via a "View full page" link (or
@@ -40,6 +43,7 @@ export default async function TermStudentListPage({
       termLabel={term.label}
       apiTermSlug={params.term}
       me={me}
+      canViewContacts={showContacts}
       initialStatus={status}
       initialCampus={searchParams.campus}
       initialGender={searchParams.gender}

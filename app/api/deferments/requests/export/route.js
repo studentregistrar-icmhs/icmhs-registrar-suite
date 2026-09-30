@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { sql } from "@/lib/deferments/db";
 import { generateRequestsExcel } from "@/lib/deferments/excel";
+import { getCurrentUserFromRequest } from "@/lib/auth/currentUser";
+import { canViewContacts } from "@/lib/contacts/access";
 
 const VALID_STATUSES = ["pending", "approved", "denied"];
 
@@ -16,7 +18,9 @@ export async function GET(request) {
       : await sql`SELECT * FROM deferment_requests ORDER BY submitted_at DESC`;
 
     const label = status ? status.charAt(0).toUpperCase() + status.slice(1) : "All";
-    const buffer = await generateRequestsExcel(rows, label);
+    // Without the contacts right the Email and Phone columns are left out of the workbook entirely.
+    const includeContacts = await canViewContacts(getCurrentUserFromRequest(request));
+    const buffer = await generateRequestsExcel(rows, label, { includeContacts });
 
     return new NextResponse(buffer, {
       status: 200,

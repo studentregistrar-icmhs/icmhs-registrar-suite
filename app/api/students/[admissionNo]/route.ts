@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStudentTimeline } from "@/lib/studentTimeline";
 import { getCurrentUserFromRequest, canAccessCampus, canAccessDepartment, canAccessCourse, canAccessTerm } from "@/lib/auth/currentUser";
+import { canViewContacts } from "@/lib/contacts/access";
+import { redactProfile } from "@/lib/contacts/redact";
 
 export async function GET(
   req: NextRequest,
@@ -17,5 +19,5 @@ export async function GET(
   if (!profile || !canAccessCampus(me, profile.campus) || !canAccessDepartment(me, profile.courseCode) || !canAccessCourse(me, profile.courseCode)) {
     return NextResponse.json({ error: "Student not found" }, { status: 404 });
   }
-  return NextResponse.json(profile);
+  return NextResponse.json(redactProfile(profile, await canViewContacts(me)));
 }

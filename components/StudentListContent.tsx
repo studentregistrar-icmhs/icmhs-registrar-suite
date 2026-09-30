@@ -44,9 +44,13 @@ export default function StudentListContent({
   onOpenCohortTag,
   fullPageHref,
   autoFocusSearch = true,
+  canViewContacts = false,
 }: {
   status: string;
   students: StudentRow[];
+  /** Server-decided (see lib/contacts/access.ts). When false the Contacts column and
+   * its CSV export column are omitted — the data itself is already blanked server-side. */
+  canViewContacts?: boolean;
   /** Unmarked students in the same current filter scope, for the "In Session"
    * reporting-rate denominator below. Empty/unused for every other status. */
   unmarkedStudents?: { courseCode: string }[];
@@ -265,8 +269,8 @@ export default function StudentListContent({
               downloadCsv(
                 `${status.replace(/\s+/g, "-")}${deptFilter ? "-" + deptFilter.replace(/\s+/g, "-") : ""}-students.csv`,
                 toCsv(
-                  ["Admission No.", "Name", "Programme", "School/Department", "Campus", "Contacts"],
-                  displayedStudents.map((s) => [s.admissionNo, s.name, s.courseName || s.courseCode, getDepartment(s.courseCode), s.campus, s.contacts])
+                  ["Admission No.", "Name", "Programme", "School/Department", "Campus", ...(canViewContacts ? ["Contacts"] : [])],
+                  displayedStudents.map((s) => [s.admissionNo, s.name, s.courseName || s.courseCode, getDepartment(s.courseCode), s.campus, ...(canViewContacts ? [s.contacts] : [])])
                 )
               )
             }
@@ -283,7 +287,7 @@ export default function StudentListContent({
               <th style={{ ...panelStyles.th, textAlign: "left" }}>Name</th>
               <th style={{ ...panelStyles.th, textAlign: "left" }}>Programme</th>
               <th style={panelStyles.th}>Campus</th>
-              <th style={{ ...panelStyles.th, textAlign: "left" }}>Contacts</th>
+              {canViewContacts && <th style={{ ...panelStyles.th, textAlign: "left" }}>Contacts</th>}
             </tr>
           </thead>
           <tbody>
@@ -297,12 +301,12 @@ export default function StudentListContent({
                 <td style={panelStyles.tdName}>{s.name}</td>
                 <td style={panelStyles.tdName}>{s.courseName || s.courseCode}</td>
                 <td style={panelStyles.tdNum}>{s.campus}</td>
-                <td style={panelStyles.tdName}>{s.contacts || "—"}</td>
+                {canViewContacts && <td style={panelStyles.tdName}>{s.contacts || "—"}</td>}
               </tr>
             ))}
             {displayedStudents.length === 0 && (
               <tr>
-                <td colSpan={5} style={{ padding: "20px", textAlign: "center", color: C.slate }}>
+                <td colSpan={canViewContacts ? 5 : 4} style={{ padding: "20px", textAlign: "center", color: C.slate }}>
                   No matching students.
                 </td>
               </tr>

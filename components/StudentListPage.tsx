@@ -23,6 +23,7 @@ export default function StudentListPage({
   termLabel,
   apiTermSlug,
   me,
+  canViewContacts = false,
   initialStatus,
   initialCampus,
   initialGender,
@@ -41,6 +42,8 @@ export default function StudentListPage({
     termScope: string[] | null;
     canViewDeferments: boolean;
   };
+  /** Server-decided — see lib/contacts/access.ts. */
+  canViewContacts?: boolean;
   initialStatus: string;
   initialCampus?: string;
   initialGender?: string;
@@ -126,6 +129,7 @@ export default function StudentListPage({
           query={query}
           onQueryChange={setQuery}
           autoFocusSearch={false}
+          canViewContacts={canViewContacts}
         />
       </div>
     </div>

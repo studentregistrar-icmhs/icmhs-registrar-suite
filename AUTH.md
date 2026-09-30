@@ -77,6 +77,29 @@ computed purely from their own department's students.
 
 5. **Deploy**, then log in at `/login` with that account.
 
+## Student contacts permission
+
+Student phone numbers (and, in the Deferments review area, student emails)
+are hidden unless an account has been given the right. Admins always have
+it; every other account is **off by default**.
+
+- **Run `db/migration_v5_contacts.sql`** once in Neon. It adds
+  `registrar_users.can_view_contacts` (default false). Until it's run,
+  non-admins simply see no contacts (fails closed). Existing accounts are
+  switched OFF by the migration — either tick the box per person, or use the
+  optional commented-out `UPDATE` in the file to start everyone on and then
+  remove it from people who shouldn't have it.
+- **Grant it** in Manage accounts → Edit access (or when creating an
+  account): **Can view student contacts**. Takes effect immediately, no
+  re-login, because it's checked against the database on every request.
+- **What it covers:** the term dashboards and their student-list drawer, the
+  full-page student lists, the conflict list, the Contacts column in every
+  CSV export, the student profile, and the Deferments review area (Email /
+  Phone in each request and in the Excel export).
+- **How it's enforced:** the numbers are removed on the server before the
+  page or API response is built (`lib/contacts/`), so they never reach the
+  browser of someone without the right — not merely hidden by the UI.
+
 ## Creating an HOD (or any scoped) account
 
 From **Manage accounts** (linked from the home page), **+ Add registrar

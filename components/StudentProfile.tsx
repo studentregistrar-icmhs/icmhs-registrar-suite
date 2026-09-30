@@ -29,6 +29,7 @@ export default function StudentProfile({
   initialProfile,
   canEdit = true,
   canViewDisciplinary = false,
+  canViewContacts = false,
   me,
 }: {
   initialProfile: Profile;
@@ -36,6 +37,10 @@ export default function StudentProfile({
   /** Whether this account may see the Disciplinary section — decided
    * server-side in the page (see lib/discipline/access.ts), never here. */
   canViewDisciplinary?: boolean;
+  /** Whether this account may see the student's phone number — decided
+   * server-side (lib/contacts/access.ts); the number is also stripped from
+   * the profile itself when false, so this only controls the label. */
+  canViewContacts?: boolean;
   me: {
     displayName: string;
     role: "admin" | "editor" | "viewer";
@@ -103,7 +108,7 @@ export default function StudentProfile({
       <h1 style={styles.h1}>{profile.name}</h1>
       <div style={styles.sub}>{profile.courseName || profile.courseCode} · {profile.campus}{profile.gender ? ` · ${profile.gender}` : ""}</div>
       <div style={styles.contactRow}>
-        {profile.contacts && <span>📞 {profile.contacts}</span>}
+        {canViewContacts && profile.contacts && <span>📞 {profile.contacts}</span>}
         {profile.intakeYear && <span>Intake: {profile.intakeYear}</span>}
         {profile.graduationCohort && <span>🎓 Graduation cohort: {profile.graduationCohort}</span>}
       </div>
