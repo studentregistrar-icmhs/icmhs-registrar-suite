@@ -11,6 +11,7 @@ export type StudentContext = {
   admissionNo: string;
   name: string;
   courseCode: string;
+  courseName: string;
   campus: "MAIN" | "NAKURU";
 };
 
@@ -47,6 +48,7 @@ export async function guardStudent(
       admissionNo,
       name: String(loc.rawRow[layout.name] ?? "").trim(),
       courseCode,
+      courseName: String(loc.rawRow[layout.courseName] ?? "").trim(),
       campus: loc.campus,
     },
   };

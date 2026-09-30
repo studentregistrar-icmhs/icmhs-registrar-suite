@@ -236,6 +236,12 @@ function CaseCard({
         <div style={s.actions}>
           <button style={s.ghostBtn} onClick={onEdit}>Edit</button>
           {active && <button style={s.reinstateBtn} onClick={onReinstate}>Reinstate student</button>}
+          {c.outcome === "suspension" && (
+            <a style={s.linkBtn} href={`/api/discipline/cases/${c.id}/letter?type=suspension`}>Suspension letter (PDF)</a>
+          )}
+          {c.outcome === "suspension" && c.reinstated_on && (
+            <a style={s.linkBtn} href={`/api/discipline/cases/${c.id}/letter?type=reinstatement`}>Reinstatement letter (PDF)</a>
+          )}
         </div>
       )}
     </div>
@@ -438,7 +444,7 @@ const s: Record<string, React.CSSProperties> = {
   summary: { fontSize: 12.5, color: C.teal, cursor: "pointer", fontWeight: 600 },
   desc: { fontSize: 13.5, lineHeight: 1.6, whiteSpace: "pre-wrap", background: "#F7F8F4", borderRadius: 6, padding: "10px 12px", margin: "8px 0" },
   metaGrid: { display: "grid", gap: 3 },
-  actions: { display: "flex", gap: 8, marginTop: 12 },
+  actions: { display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" },
   suspBanner: { background: "#FBF0DC", color: "#8A5A0B", border: "1px solid #EBD3A0", borderRadius: 8, padding: "10px 14px", fontSize: 13, fontWeight: 600, marginBottom: 12 },
   warn: { background: "#FBF0DC", color: "#8A5A0B", border: "1px solid #EBD3A0", borderRadius: 8, padding: "9px 12px", fontSize: 12.5, lineHeight: 1.5, margin: "8px 0" },
   errBox: { background: "#F3E7E4", color: C.rose, borderRadius: 8, padding: "9px 12px", fontSize: 12.5, lineHeight: 1.5, margin: "8px 0" },
@@ -450,5 +456,6 @@ const s: Record<string, React.CSSProperties> = {
   check: { display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, cursor: "pointer" },
   primaryBtn: { border: "none", background: C.ink, color: "#fff", borderRadius: 6, padding: "7px 14px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" },
   ghostBtn: { border: `1px solid ${C.line}`, background: "#fff", borderRadius: 6, padding: "6px 12px", fontSize: 12.5, cursor: "pointer", color: C.slate },
+  linkBtn: { border: `1px solid ${C.line}`, background: "#fff", borderRadius: 6, padding: "6px 12px", fontSize: 12.5, color: C.teal, fontWeight: 600, textDecoration: "none", display: "inline-block" },
   reinstateBtn: { border: "none", background: C.teal, color: "#fff", borderRadius: 6, padding: "7px 14px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" },
 };

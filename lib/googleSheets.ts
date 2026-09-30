@@ -287,6 +287,12 @@ export async function mirrorDefermentStatusToCampusTab(
   const rowNumber = await findRowNumberInTab(tabName, admissionNumber, "B");
 
   if (rowNumber) {
+    // A suspension is managed through the student's disciplinary case; a
+    // deferment approval/denial must not silently replace it.
+    const current = await fetchSheetRows(`${tabName}!${mirrorColumn}${rowNumber}`);
+    if (String(current?.[0]?.[0] ?? "").trim() === "Suspended") {
+      return { skipped: true, found: true, sheet: tabName, row: rowNumber, reason: "student is currently suspended" };
+    }
     await updateRange(`${tabName}!${mirrorColumn}${rowNumber}`, [statusText]);
     return { skipped: false, found: true, sheet: tabName, row: rowNumber };
   }

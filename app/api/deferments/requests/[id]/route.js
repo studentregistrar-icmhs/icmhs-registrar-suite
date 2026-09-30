@@ -37,17 +37,22 @@ export async function PATCH(request, context) {
     if (rows.length === 0) {
       return NextResponse.json({ error: "Request not found." }, { status: 404 });
     }
+    let sheetWarning = null;
     try {
+      let mirror = null;
       if (status === "approved") {
         const label = `${rows[0].type_of_deferment || "Deferment"} - Approved`;
-        await mirrorDefermentStatusToCampusTab(rows[0].campus, rows[0].admission_number, label);
+        mirror = await mirrorDefermentStatusToCampusTab(rows[0].campus, rows[0].admission_number, label);
       } else if (status === "denied" || status === "pending") {
-        await mirrorDefermentStatusToCampusTab(rows[0].campus, rows[0].admission_number, "");
+        mirror = await mirrorDefermentStatusToCampusTab(rows[0].campus, rows[0].admission_number, "");
+      }
+      if (mirror?.skipped && mirror.reason === "student is currently suspended") {
+        sheetWarning = "The request was saved, but the student is currently Suspended, so their status in the sheet was left unchanged. Reinstate them through their disciplinary case first.";
       }
     } catch (sheetErr) {
       console.error("Google Sheets update failed:", sheetErr);
     }
-    return NextResponse.json({ request: rows[0] });
+    return NextResponse.json({ request: rows[0], sheetWarning });
   } catch (err) {
     console.error("Update failed:", err);
     return NextResponse.json({ error: "Could not update request." }, { status: 500 });

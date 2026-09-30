@@ -65,6 +65,8 @@ type Props = {
   apiTermSlug: string;
   previousTermLabel?: string;
   previousData?: DashboardData | null;
+  /** Optional server-rendered block shown directly under the page header (used for the disciplinary overview). */
+  extraTop?: React.ReactNode;
   me: {
     role: "admin" | "editor" | "viewer";
     campusScope: "ALL" | "MAIN" | "NAKURU";
@@ -78,7 +80,7 @@ type Props = {
 const AUTO_REFRESH_MS = 3 * 60 * 1000;
 
 export default function Dashboard({
-  initialData, initialConflicts, termLabel, isLive, canCarryForward, isColumnTerm, apiTermSlug, previousTermLabel, previousData, me,
+  initialData, initialConflicts, termLabel, isLive, canCarryForward, isColumnTerm, apiTermSlug, previousTermLabel, previousData, extraTop, me,
 }: Props) {
   const [data, setData] = useState(initialData);
   const [conflicts, setConflicts] = useState(initialConflicts);
@@ -853,6 +855,8 @@ export default function Dashboard({
           )}
         </div>
       </header>
+
+      {extraTop}
 
       <div style={styles.tabRow}>
         <button

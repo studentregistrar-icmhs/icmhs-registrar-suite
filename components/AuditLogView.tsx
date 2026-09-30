@@ -11,7 +11,7 @@ const C = {
 type AuditAction =
   | "status_edit" | "unmarked_mark" | "unmarked_mark_bulk" | "bulk_upload"
   | "carry_forward" | "conflict_resolve" | "conflict_resolve_bulk" | "cohort_tag"
-  | "discipline_view" | "discipline_case_open" | "discipline_case_update" | "discipline_reinstate";
+  | "discipline_view" | "discipline_case_open" | "discipline_case_update" | "discipline_reinstate" | "discipline_letter";
 
 type Row = {
   id: number;
@@ -37,6 +37,7 @@ const ACTION_LABEL: Record<AuditAction, string> = {
   discipline_case_open: "Disciplinary case opened",
   discipline_case_update: "Disciplinary case updated",
   discipline_reinstate: "Suspension: reinstated",
+  discipline_letter: "Disciplinary letter generated",
 };
 
 export default function AuditLogView() {

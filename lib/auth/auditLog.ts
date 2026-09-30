@@ -12,7 +12,8 @@ export type AuditAction =
   | "discipline_view"
   | "discipline_case_open"
   | "discipline_case_update"
-  | "discipline_reinstate";
+  | "discipline_reinstate"
+  | "discipline_letter";
 
 /**
  * Records one audit entry. Best-effort and never throws — a logging

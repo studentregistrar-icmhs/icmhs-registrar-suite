@@ -26,6 +26,26 @@
 - Changing a suspension's outcome later (e.g. an appeal overturns it) lifts the
   Suspended status. Once reinstated, the outcome and dates are locked.
 
+## Dashboard overview (phase 2)
+
+Accounts with disciplinary access see a panel under each term dashboard's header:
+**Active suspensions** and **Open cases** (open / hearing / appealed), with the names
+of the suspended students (overdue reinstatements first) linking to their profiles.
+It lists every active suspension you are allowed to see, whichever term it was
+recorded against, so a suspension running into a new term is not lost. The panel
+is hidden when there is nothing to show, and never contains case descriptions.
+
+## Letters (phase 2)
+
+On a suspension case, **Suspension letter (PDF)**; once reinstated, **Reinstatement
+letter (PDF)**. Letterhead and crest match the deferment form. Each download is logged.
+
+- The letters state only the *category* of the matter, never the free-text description.
+- **Review the wording before first use.** All of it is in one block, `LETTER_TEXT`, at the
+  top of `lib/discipline/letters.ts` (conduct during suspension, appeal sentence, cc line).
+  I wrote it generically; align it with your Student Code of Conduct and disciplinary policy.
+- Letters need the same access as recording a case (not view-only).
+
 ## Rules the app enforces
 
 - **Suspended can only be set or cleared through a case.** The status dropdown,
@@ -43,6 +63,8 @@
 - A suspension that runs into the next term does not carry forward automatically:
   when you add the next term's status column, that student will show Unmarked there
   until you handle it. (A "carry Suspended forward" step is the natural next addition.)
-- Approving/denying a deferment writes straight to the status column and would
-  overwrite Suspended for a student who applies while suspended.
+- A deferment approval/denial for a currently Suspended student is now blocked from
+  overwriting the status; the request is saved and the reviewer sees a warning.
+- Letters have no free-text "grounds" field and no editable body; change wording in code.
+- Only suspension and reinstatement letters exist (no warning or expulsion letters yet).
 - Cases can't be deleted, only closed — deliberate, for the record.

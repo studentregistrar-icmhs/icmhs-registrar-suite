@@ -185,6 +185,7 @@ function Entry({ record, open, onToggle, onUpdated }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Could not update request.");
       onUpdated(data.request);
+      if (data.sheetWarning) alert(data.sheetWarning);
     } catch (e) {
       setErr(e.message);
     } finally {
