@@ -26,14 +26,27 @@
 - Changing a suspension's outcome later (e.g. an appeal overturns it) lifts the
   Suspended status. Once reinstated, the outcome and dates are locked.
 
-## Dashboard overview (phase 2)
+## The Disciplinary area (`/discipline`)
 
-Accounts with disciplinary access see a panel under each term dashboard's header:
-**Active suspensions** and **Open cases** (open / hearing / appealed), with the names
-of the suspended students (overdue reinstatements first) linking to their profiles.
-It lists every active suspension you are allowed to see, whichever term it was
-recorded against, so a suspension running into a new term is not lost. The panel
-is hidden when there is nothing to show, and never contains case descriptions.
+A separate section like Deferments, with a **Disciplinary** link in the top nav. The link
+and the page appear only for accounts with disciplinary access (admins always).
+
+- **List of all cases** with filter chips (All, Active suspensions, Reinstatement due,
+  Open cases, Decided, Closed), an outcome filter, a category filter, and search by
+  name, admission number or case ref.
+- **Click a case** to open that student's disciplinary record: description, edit,
+  reinstate, and the letter buttons.
+- **Record a case:** enter an admission number, the student is looked up, and the
+  case form opens straight away. Recording needs a non-Viewer role.
+- **Export list (Excel):** case ref, student, course, campus, category, status, outcome,
+  dates. Descriptions and notes are deliberately NOT exported. Each export is logged.
+- The same campus / school / course / term limits on an account apply to the list,
+  the lookup and the export.
+- The student profile page keeps its own Disciplinary section (same permission).
+
+**On the term dashboard:** *Suspended* is a status like any other. It appears in the overview
+ledger, the KPI row and the term trend, and clicking it lists the suspended students. There is
+no separate disciplinary panel on the dashboard any more.
 
 ## Letters (phase 2)
 

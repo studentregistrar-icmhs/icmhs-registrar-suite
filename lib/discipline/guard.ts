@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { findStudentRow } from "@/lib/rosterLookup";
 import { LAYOUT_FOR_WRITE } from "@/lib/parse";
 import {
-  canAccessCampus, canAccessDepartment, canAccessCourse,
+  canAccessCampus, canAccessDepartment, canAccessCourse, canAccessTerm,
   type CurrentUser,
 } from "@/lib/auth/currentUser";
 import { canViewDisciplinary, canManageDisciplinary } from "./access";
@@ -52,4 +52,19 @@ export async function guardStudent(
       campus: loc.campus,
     },
   };
+}
+
+/** Same campus / school / course / term scoping the rest of the app applies,
+ * for cases listed in bulk (the per-student routes use guardStudent instead). */
+export function scopeCases<T extends { campus: "MAIN" | "NAKURU"; course_code: string | null; term_slug: string }>(
+  me: CurrentUser,
+  rows: T[]
+): T[] {
+  return rows.filter(
+    (c) =>
+      canAccessCampus(me, c.campus) &&
+      canAccessDepartment(me, c.course_code ?? "") &&
+      canAccessCourse(me, c.course_code ?? "") &&
+      canAccessTerm(me, c.term_slug)
+  );
 }

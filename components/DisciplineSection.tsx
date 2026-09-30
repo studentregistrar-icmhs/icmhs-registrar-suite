@@ -42,7 +42,7 @@ const formFromCase = (c: DisciplinaryCase): FormState => ({
 });
 
 export default function DisciplineSection({
-  admissionNo, termSlug, canEdit, onStatusMayHaveChanged,
+  admissionNo, termSlug, canEdit, onStatusMayHaveChanged, startWithNew = false,
 }: {
   admissionNo: string;
   termSlug: string;
@@ -50,11 +50,13 @@ export default function DisciplineSection({
   /** Recording/lifting a suspension changes the student's status in the
    * sheet, so the profile timeline above needs to re-fetch. */
   onStatusMayHaveChanged: () => void;
+  /** Open the "Record a disciplinary case" form immediately. */
+  startWithNew?: boolean;
 }) {
   const [cases, setCases] = useState<DisciplinaryCase[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [editing, setEditing] = useState<"new" | number | null>(null);
+  const [editing, setEditing] = useState<"new" | number | null>(startWithNew && canEdit ? "new" : null);
   const [reinstating, setReinstating] = useState<number | null>(null);
 
   async function load() {

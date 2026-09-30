@@ -195,3 +195,21 @@ export async function markReinstated(
   `) as DisciplinaryCase[];
   return rows[0] ?? null;
 }
+
+/** What the case LIST needs — deliberately no description or notes fields. */
+export type ListCase = Pick<
+  DisciplinaryCase,
+  | "id" | "case_ref" | "admission_no" | "student_name" | "course_code" | "campus" | "term_slug"
+  | "incident_date" | "category" | "case_status" | "hearing_date" | "outcome" | "decision_date"
+  | "suspension_start" | "suspension_end" | "suspension_indefinite" | "reinstated_on" | "created_at"
+>;
+
+export async function listAllCasesForOverview(): Promise<ListCase[]> {
+  return (await sql`
+    SELECT id, case_ref, admission_no, student_name, course_code, campus, term_slug,
+           incident_date, category, case_status, hearing_date, outcome, decision_date,
+           suspension_start, suspension_end, suspension_indefinite, reinstated_on, created_at
+    FROM disciplinary_cases
+    ORDER BY incident_date DESC, id DESC
+  `) as ListCase[];
+}

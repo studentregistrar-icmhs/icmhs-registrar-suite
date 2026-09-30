@@ -1,5 +1,6 @@
 import Link from "next/link";
 import UserMenu from "@/components/UserMenu";
+import DisciplineNavLink from "@/components/DisciplineNavLink";
 
 const C = { ink: "#122A28", line: "#D9DFD3", teal: "#0F7268" };
 
@@ -30,7 +31,7 @@ export default function AppNav({
     termScope: string[] | null;
     canViewDeferments: boolean;
   };
-  active?: "home" | "students" | "reports" | "deferments" | "admin";
+  active?: "home" | "students" | "reports" | "deferments" | "discipline" | "admin";
 }) {
   const linkStyle = (key: string): React.CSSProperties => ({
     fontSize: 13, fontWeight: 600, textDecoration: "none",
@@ -48,6 +49,7 @@ export default function AppNav({
         {me.canViewDeferments && (
           <Link href="/deferments/admin" style={linkStyle("deferments")}>Deferments</Link>
         )}
+        <DisciplineNavLink isAdmin={me.role === "admin"} isActive={active === "discipline"} />
         {me.role === "admin" && <Link href="/admin/users" style={linkStyle("admin")}>Manage accounts</Link>}
       </div>
       <UserMenu displayName={me.displayName} role={me.role} campusScope={me.campusScope} departmentScope={me.departmentScope} termScope={me.termScope} />

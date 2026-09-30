@@ -5,8 +5,6 @@ import { getTerm, getPreviousTerm, TERMS } from "@/lib/terms";
 import { loadTermData } from "@/lib/loadTermData";
 import { getCurrentUser, canAccessTerm } from "@/lib/auth/currentUser";
 import BackLink from "@/components/BackLink";
-import DisciplineSummary from "@/components/DisciplineSummary";
-import { loadDisciplineSummary } from "@/lib/discipline/summary";
 
 export const revalidate = Number(process.env.REVALIDATE_SECONDS ?? 120);
 
@@ -37,7 +35,6 @@ export default async function TermPage({ params }: { params: { term: string } })
       : Promise.resolve(null),
   ]);
   if (!data) notFound();
-  const disciplineSummary = await loadDisciplineSummary(me);
 
   if (data.error) {
     return (
@@ -65,7 +62,6 @@ export default async function TermPage({ params }: { params: { term: string } })
       apiTermSlug={params.term}
       previousTermLabel={previousTerm && canAccessTerm(me, previousTerm.slug) ? previousTerm.label : undefined}
       previousData={previousData && !previousData.error ? previousData.dashboard : null}
-      extraTop={disciplineSummary ? <DisciplineSummary data={disciplineSummary} /> : null}
       me={me}
     />
   );
