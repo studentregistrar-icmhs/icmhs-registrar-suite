@@ -36,7 +36,7 @@ type StudentRow = {
 export default function StudentListContent({
   status,
   students,
-  unmarkedStudents,
+  nyrStudents,
   termSlug,
   query,
   onQueryChange,
@@ -51,9 +51,9 @@ export default function StudentListContent({
   /** Server-decided (see lib/contacts/access.ts). When false the Contacts column and
    * its CSV export column are omitted — the data itself is already blanked server-side. */
   canViewContacts?: boolean;
-  /** Unmarked students in the same current filter scope, for the "In Session"
+  /** "Not Yet Reported" students in the same current filter scope, for the "In Session"
    * reporting-rate denominator below. Empty/unused for every other status. */
-  unmarkedStudents?: { courseCode: string }[];
+  nyrStudents?: { courseCode: string }[];
   termSlug: string;
   query: string;
   onQueryChange: (q: string) => void;
@@ -70,10 +70,10 @@ export default function StudentListContent({
   useEffect(() => { setDeptFilter(null); setCohortFilter(null); }, [status]);
 
   // Only "In Session" gets the reporting-rate treatment: department count
-  // measured against (that department's In Session + still-Unmarked) —
+  // measured against (that department's In Session + Not Yet Reported) —
   // i.e. how far each department has gotten through reporting, rather
   // than that department's share of everyone who has reported so far.
-  const isReportingRate = status === "In Session" && !!unmarkedStudents;
+  const isReportingRate = status === "In Session" && !!nyrStudents;
   const isGraduatedPanel = status === "Graduated";
 
   // Cohort- and department-scoped views of the same list, used to make the
@@ -103,28 +103,28 @@ export default function StudentListContent({
     return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
   }, [cohortScopedStudents]);
 
-  const unmarkedByDept = useMemo(() => {
+  const nyrByDept = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const s of unmarkedStudents ?? []) {
+    for (const s of nyrStudents ?? []) {
       const d = getDepartment(s.courseCode);
       counts.set(d, (counts.get(d) ?? 0) + 1);
     }
     return counts;
-  }, [unmarkedStudents]);
+  }, [nyrStudents]);
 
   // For the reporting-rate view, a department that hasn't reported anyone
-  // yet (0 In Session but some still-Unmarked) needs to show up as 0% —
+  // yet (0 In Session but some Not Yet Reported) needs to show up as 0% —
   // byDept alone would silently drop it, since it's only ever built from
   // In Session students.
   const reportingRows = useMemo(() => {
     if (!isReportingRate) return byDept;
-    const depts = new Set<string>([...byDept.map(([d]) => d), ...unmarkedByDept.keys()]);
+    const depts = new Set<string>([...byDept.map(([d]) => d), ...nyrByDept.keys()]);
     return Array.from(depts)
       .map((d): [string, number] => [d, byDept.find(([n]) => n === d)?.[1] ?? 0])
-      .sort((a, b) => b[1] + (unmarkedByDept.get(b[0]) ?? 0) - (a[1] + (unmarkedByDept.get(a[0]) ?? 0)));
-  }, [isReportingRate, byDept, unmarkedByDept]);
+      .sort((a, b) => b[1] + (nyrByDept.get(b[0]) ?? 0) - (a[1] + (nyrByDept.get(a[0]) ?? 0)));
+  }, [isReportingRate, byDept, nyrByDept]);
 
-  const totalExpected = students.length + (unmarkedStudents?.length ?? 0);
+  const totalExpected = students.length + (nyrStudents?.length ?? 0);
   const totalPct = totalExpected ? Math.round((students.length / totalExpected) * 100) : 0;
 
   // Cohort breakdown, Graduated only — "Untagged" catches anyone graduated
@@ -180,7 +180,7 @@ export default function StudentListContent({
             Breakdown by School/Department{cohortFilter ? ` — ${cohortFilter} cohort` : ""} {deptFilter && <button style={panelStyles.deptClear} onClick={() => setDeptFilter(null)}>clear filter ✕</button>}
           </div>
           {reportingRows.map(([dept, count]) => {
-            const expected = isReportingRate ? count + (unmarkedByDept.get(dept) ?? 0) : cohortScopedStudents.length;
+            const expected = isReportingRate ? count + (nyrByDept.get(dept) ?? 0) : cohortScopedStudents.length;
             const pct = expected ? Math.round((count / expected) * 100) : 0;
             const active = deptFilter === dept;
             return (
@@ -194,7 +194,7 @@ export default function StudentListContent({
                 }}
                 title={
                   isReportingRate
-                    ? "Click to filter · % is this department's In Session count against In Session + still-Unmarked for that department"
+                    ? "Click to filter · % is this department's In Session count against In Session + Not Yet Reported for that department"
                     : "Click to filter the list below to this School/Department"
                 }
               >

@@ -731,16 +731,16 @@ export default function Dashboard({
     return rows;
   }, [selectedStatus, filteredStudents, studentQuery]);
 
-  // "In Session" is the one status where Unmarked is the natural
-  // complement — everyone who'll eventually report started the term
-  // Unmarked. Carries the same campus/gender/course/department/intake
+  // "In Session" is the one status where Not Yet Reported is the natural
+  // complement — everyone who'll eventually report starts the term as
+  // Not Yet Reported. Carries the same campus/gender/course/department/intake
   // filters as studentPanelList (but never the in-panel search box —
   // that's for finding one student, not for changing the reporting-rate
   // denominator) so the "expected to report" figure always agrees with
   // whatever slice of the roster is currently in view.
-  const unmarkedPanelList = useMemo(() => {
+  const nyrPanelList = useMemo(() => {
     if (selectedStatus !== "In Session") return [];
-    return filteredStudents.filter((s) => s.status === "Unmarked");
+    return filteredStudents.filter((s) => s.status === "Not Yet Reported");
   }, [selectedStatus, filteredStudents]);
 
   // Carries the same campus/gender/course/department/intake scope the
@@ -1434,7 +1434,7 @@ export default function Dashboard({
         <StudentListPanel
           status={selectedStatus}
           students={studentPanelList}
-          unmarkedStudents={unmarkedPanelList}
+          nyrStudents={nyrPanelList}
           termSlug={apiTermSlug}
           canViewContacts={canViewContacts}
           onOpenCohortTag={selectedStatus === "Graduated" && me.role === "admin" ? () => setCohortTagOpen(true) : undefined}
@@ -1825,7 +1825,7 @@ function GlobalSearchDropdown({
 function StudentListPanel({
   status,
   students,
-  unmarkedStudents,
+  nyrStudents,
   termSlug,
   query,
   onQueryChange,
@@ -1837,9 +1837,9 @@ function StudentListPanel({
   status: string;
   canViewContacts?: boolean;
   students: { admissionNo: string; name: string; courseCode: string; courseName: string; campus: string; contacts: string; graduationCohort?: string }[];
-  /** Unmarked students in the same current filter scope, for the "In Session"
+  /** "Not Yet Reported" students in the same current filter scope, for the "In Session"
    * reporting-rate denominator below. Empty/unused for every other status. */
-  unmarkedStudents?: { courseCode: string }[];
+  nyrStudents?: { courseCode: string }[];
   termSlug: string;
   query: string;
   onQueryChange: (q: string) => void;
@@ -1856,7 +1856,7 @@ function StudentListPanel({
         <StudentListContent
           status={status}
           students={students}
-          unmarkedStudents={unmarkedStudents}
+          nyrStudents={nyrStudents}
           termSlug={termSlug}
           query={query}
           onQueryChange={onQueryChange}

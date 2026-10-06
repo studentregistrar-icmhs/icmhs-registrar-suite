@@ -89,9 +89,9 @@ export default function StudentListPage({
     return rows;
   }, [scopedStudents, status, query]);
 
-  const unmarkedStudents = useMemo(() => {
+  const nyrStudents = useMemo(() => {
     if (status !== "In Session") return [];
-    return scopedStudents.filter((s) => s.status === "Unmarked");
+    return scopedStudents.filter((s) => s.status === "Not Yet Reported");
   }, [scopedStudents, status]);
 
   const scopeNote = [
@@ -124,7 +124,7 @@ export default function StudentListPage({
         <StudentListContent
           status={status}
           students={students}
-          unmarkedStudents={unmarkedStudents}
+          nyrStudents={nyrStudents}
           termSlug={apiTermSlug}
           query={query}
           onQueryChange={setQuery}
