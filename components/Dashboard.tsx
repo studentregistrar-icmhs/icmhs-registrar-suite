@@ -44,6 +44,14 @@ const MARK_STATUS_OPTIONS = [
   "Deferred", "Dropped", "Completed", "Not Yet Reported",
 ];
 
+// Every status column of the All Programmes table, in ledger order.
+const SHORT_STATUS_LABEL: Record<string, string> = {
+  "Graduated": "Grad.", "In Session": "In Sess.", "Completed": "Compl.", "Attachment": "Attach.",
+  "Dropped": "Dropped", "Deferred": "Defer.", "Suspended": "Susp.", "Clinicals": "Clin.",
+  "Not Yet Reported": "NYR", "Short Course": "Short", "Unmarked": "Unmkd.",
+};
+const PROGRAMME_STATUS_COLS = STATUS_ORDER.map((s) => ({ label: s.label, short: SHORT_STATUS_LABEL[s.label] ?? s.label }));
+
 const fmt = (n: number) => n.toLocaleString("en-US");
 
 function relativeTime(iso: string, now: number): string {
@@ -97,7 +105,7 @@ export default function Dashboard({
   const [refreshing, setRefreshing] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
   const [studentQuery, setStudentQuery] = useState("");
-  const [sortKey, setSortKey] = useState<"code" | "name" | "totalMain" | "totalNakuru" | "total" | "Graduated" | "In Session" | "Completed" | "Dropped">("total");
+  const [sortKey, setSortKey] = useState<string>("total");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [globalQuery, setGlobalQuery] = useState("");
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
@@ -396,12 +404,36 @@ export default function Dashboard({
   // chart (every filter except the intake filter) so all intake columns stay
   // visible even while one intake is selected elsewhere.
   const intakeMatrix = useMemo(() => buildIntakeMatrix(studentsForIntakeChart), [studentsForIntakeChart]);
+  // Per-programme status counts split by campus, built from the student list
+  // (data.programs only carries a combined-campus breakdown).
+  const programStatusByCampus = useMemo(() => {
+    const m = new Map<string, { MAIN: Record<string, number>; NAKURU: Record<string, number> }>();
+    for (const s of allStudentsFlat) {
+      const code = s.courseCode || "UNKNOWN";
+      let e = m.get(code);
+      if (!e) { e = { MAIN: {}, NAKURU: {} }; m.set(code, e); }
+      const bucket = s.campus === "NAKURU" ? e.NAKURU : e.MAIN;
+      bucket[s.status] = (bucket[s.status] ?? 0) + 1;
+    }
+    return m;
+  }, [allStudentsFlat]);
+  const statusCountsFor = (code: string, c: "all" | "main" | "nakuru"): Record<string, number> => {
+    const e = programStatusByCampus.get(code);
+    if (!e) return {};
+    if (c === "main") return e.MAIN;
+    if (c === "nakuru") return e.NAKURU;
+    const out: Record<string, number> = { ...e.MAIN };
+    for (const [k, v] of Object.entries(e.NAKURU)) out[k] = (out[k] ?? 0) + v;
+    return out;
+  };
   const programsFiltered = useMemo(() => {
-    let rows = data.programs.filter((p) => {
-      if (campus === "main" && p.totalMain === 0) return false;
-      if (campus === "nakuru" && p.totalNakuru === 0) return false;
-      return true;
-    });
+    let rows = data.programs
+      .filter((p) => {
+        if (campus === "main" && p.totalMain === 0) return false;
+        if (campus === "nakuru" && p.totalNakuru === 0) return false;
+        return true;
+      })
+      .map((p) => ({ ...p, statusCounts: statusCountsFor(p.code, campus) }));
     if (query.trim()) {
       const q = query.toLowerCase();
       rows = rows.filter(
@@ -423,7 +455,7 @@ export default function Dashboard({
       return dir * ((av as number) - (bv as number));
     });
     return rows;
-  }, [data, campus, query, sortKey, sortDir]);
+  }, [data, campus, query, sortKey, sortDir, programStatusByCampus]);
 
   function toggleSort(key: typeof sortKey) {
     if (sortKey === key) {
@@ -439,13 +471,27 @@ export default function Dashboard({
     downloadCsv(`${termLabel.replace(/\s+/g, "-")}-admissions-by-intake.csv`, toCsv(headers, rows));
   }
 
+  // Full breakdown regardless of the campus toggle: every status for both
+  // campuses combined, then Thika (Main), then Nakuru.
   function exportProgrammes() {
-    const headers = ["Code", "Programme", "Main", "Nakuru", "Total", "Graduated", "In Session", "Completed", "Dropped"];
-    const rows = programsFiltered.map((p) => [
-      p.code, p.name, p.totalMain, p.totalNakuru, p.total,
-      p.statusCounts["Graduated"] ?? 0, p.statusCounts["In Session"] ?? 0,
-      p.statusCounts["Completed"] ?? 0, p.statusCounts["Dropped"] ?? 0,
-    ]);
+    const labels = STATUS_ORDER.map((s) => s.label);
+    const headers = [
+      "Code", "Programme", "Main", "Nakuru", "Total",
+      ...labels.map((l) => `${l} (All)`),
+      ...labels.map((l) => `${l} (Thika)`),
+      ...labels.map((l) => `${l} (Nakuru)`),
+    ];
+    const rows = programsFiltered.map((p) => {
+      const all = statusCountsFor(p.code, "all");
+      const m = statusCountsFor(p.code, "main");
+      const n = statusCountsFor(p.code, "nakuru");
+      return [
+        p.code, p.name, p.totalMain, p.totalNakuru, p.total,
+        ...labels.map((l) => all[l] ?? 0),
+        ...labels.map((l) => m[l] ?? 0),
+        ...labels.map((l) => n[l] ?? 0),
+      ];
+    });
     downloadCsv(`${termLabel.replace(/\s+/g, "-")}-programmes.csv`, toCsv(headers, rows));
   }
 
@@ -1065,7 +1111,12 @@ export default function Dashboard({
 
           <section style={styles.card}>
             <div style={styles.cardHead}>
-              <h2 style={styles.h2}>All Programmes</h2>
+              <div>
+                <h2 style={styles.h2}>All Programmes</h2>
+                <span style={styles.cardNote}>
+                  status columns show {campus === "all" ? "both campuses combined" : campus === "main" ? "Thika (Main) only" : "Nakuru only"} · use the campus toggle at the top to switch · Export CSV has all three
+                </span>
+              </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <input
                   value={query}
@@ -1085,10 +1136,9 @@ export default function Dashboard({
                     <SortableTh label="Main" active={sortKey === "totalMain"} dir={sortDir} onClick={() => toggleSort("totalMain")} />
                     <SortableTh label="Nakuru" active={sortKey === "totalNakuru"} dir={sortDir} onClick={() => toggleSort("totalNakuru")} />
                     <SortableTh label="Total" active={sortKey === "total"} dir={sortDir} onClick={() => toggleSort("total")} />
-                    <SortableTh label="Grad." active={sortKey === "Graduated"} dir={sortDir} onClick={() => toggleSort("Graduated")} />
-                    <SortableTh label="In Sess." active={sortKey === "In Session"} dir={sortDir} onClick={() => toggleSort("In Session")} />
-                    <SortableTh label="Compl." active={sortKey === "Completed"} dir={sortDir} onClick={() => toggleSort("Completed")} />
-                    <SortableTh label="Dropped" active={sortKey === "Dropped"} dir={sortDir} onClick={() => toggleSort("Dropped")} />
+                    {PROGRAMME_STATUS_COLS.map((c) => (
+                      <SortableTh key={c.label} label={c.short} title={c.label} active={sortKey === c.label} dir={sortDir} onClick={() => toggleSort(c.label)} />
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -1099,14 +1149,28 @@ export default function Dashboard({
                       <td style={styles.tdNum}>{fmt(p.totalMain)}</td>
                       <td style={styles.tdNum}>{fmt(p.totalNakuru)}</td>
                       <td style={{ ...styles.tdNum, fontWeight: 600, color: C.ink }}>{fmt(p.total)}</td>
-                      <td style={styles.tdNum}>{fmt(p.statusCounts["Graduated"] ?? 0)}</td>
-                      <td style={styles.tdNum}>{fmt(p.statusCounts["In Session"] ?? 0)}</td>
-                      <td style={styles.tdNum}>{fmt(p.statusCounts["Completed"] ?? 0)}</td>
-                      <td style={{ ...styles.tdNum, color: (p.statusCounts["Dropped"] ?? 0) > 0 ? C.rose : C.slate }}>
-                        {fmt(p.statusCounts["Dropped"] ?? 0)}
-                      </td>
+                      {PROGRAMME_STATUS_COLS.map((c) => {
+                        const v = p.statusCounts[c.label] ?? 0;
+                        return (
+                          <td key={c.label} style={{ ...styles.tdNum, color: v === 0 ? "#B8C0B6" : c.label === "Dropped" ? C.rose : C.slate }}>
+                            {fmt(v)}
+                          </td>
+                        );
+                      })}
                     </tr>
                   ))}
+                  <tr style={{ borderTop: `2px solid ${C.ink}`, background: "#F0F4EC" }}>
+                    <td style={styles.tdCode} />
+                    <td style={{ ...styles.tdName, fontWeight: 700 }}>TOTAL ({programsFiltered.length} programmes)</td>
+                    <td style={{ ...styles.tdNum, fontWeight: 700, color: C.ink }}>{fmt(programsFiltered.reduce((a, p) => a + p.totalMain, 0))}</td>
+                    <td style={{ ...styles.tdNum, fontWeight: 700, color: C.ink }}>{fmt(programsFiltered.reduce((a, p) => a + p.totalNakuru, 0))}</td>
+                    <td style={{ ...styles.tdNum, fontWeight: 700, color: C.ink }}>{fmt(programsFiltered.reduce((a, p) => a + p.total, 0))}</td>
+                    {PROGRAMME_STATUS_COLS.map((c) => (
+                      <td key={c.label} style={{ ...styles.tdNum, fontWeight: 700, color: C.ink }}>
+                        {fmt(programsFiltered.reduce((a, p) => a + (p.statusCounts[c.label] ?? 0), 0))}
+                      </td>
+                    ))}
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -1802,10 +1866,11 @@ function KpiCard({ label, value, accent, big, onClick }: { label: string; value:
 }
 
 function SortableTh({
-  label, active, dir, onClick, align,
-}: { label: string; active: boolean; dir: "asc" | "desc"; onClick: () => void; align?: "left" }) {
+  label, active, dir, onClick, align, title,
+}: { label: string; active: boolean; dir: "asc" | "desc"; onClick: () => void; align?: "left"; title?: string }) {
   return (
     <th
+      title={title}
       style={{ ...styles.th, textAlign: align ?? "right", cursor: "pointer", userSelect: "none", color: active ? C.teal : undefined }}
       onClick={onClick}
     >
