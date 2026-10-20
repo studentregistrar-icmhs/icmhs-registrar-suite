@@ -11,6 +11,8 @@ import type { ConflictRow } from "@/lib/reconcile";
 import { toCsv, downloadCsv, parseCsv } from "@/lib/csv";
 import { getDepartment } from "@/lib/departments";
 import { parseIntake } from "@/lib/intake";
+import { buildIntakeMatrix, intakeMatrixToCsvRows } from "@/lib/intakeMatrix";
+import IntakeMatrixTable from "@/components/IntakeMatrixTable";
 import AppNav from "@/components/AppNav";
 import StudentListContent, { panelStyles } from "@/components/StudentListContent";
 
@@ -390,6 +392,10 @@ export default function Dashboard({
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => sortKey(a.name) - sortKey(b.name));
   }, [studentsForIntakeChart]);
+  // Course × intake admissions snapshot. Uses the same rows as the By Intake
+  // chart (every filter except the intake filter) so all intake columns stay
+  // visible even while one intake is selected elsewhere.
+  const intakeMatrix = useMemo(() => buildIntakeMatrix(studentsForIntakeChart), [studentsForIntakeChart]);
   const programsFiltered = useMemo(() => {
     let rows = data.programs.filter((p) => {
       if (campus === "main" && p.totalMain === 0) return false;
@@ -426,6 +432,11 @@ export default function Dashboard({
       setSortKey(key);
       setSortDir("desc");
     }
+  }
+
+  function exportIntakeMatrix() {
+    const { headers, rows } = intakeMatrixToCsvRows(intakeMatrix);
+    downloadCsv(`${termLabel.replace(/\s+/g, "-")}-admissions-by-intake.csv`, toCsv(headers, rows));
   }
 
   function exportProgrammes() {
@@ -1100,6 +1111,27 @@ export default function Dashboard({
               </table>
             </div>
           </section>
+
+          {intakeMatrix.grandTotal > 0 && (
+            <section style={styles.card}>
+              <div style={styles.cardHead}>
+                <div>
+                  <h2 style={styles.h2}>Admissions by Course &amp; Intake</h2>
+                  <span style={styles.cardNote}>
+                    students admitted per course in each intake · grouped by department
+                  </span>
+                </div>
+                <button onClick={exportIntakeMatrix} style={styles.exportBtn}>Export CSV</button>
+              </div>
+              <IntakeMatrixTable matrix={intakeMatrix} />
+              <div style={{ ...styles.ledgerFoot, marginTop: 10 }}>
+                Counts every student on the {termLabel} roster by the Intake/Year recorded against them.
+                Follows the campus, department, gender and course filters (not the intake filter, so all
+                intakes stay visible). Intakes later than {termLabel} aren't on this term's roster.
+                Students with a blank or unrecognised Intake/Year appear under "No intake".
+              </div>
+            </section>
+          )}
         </>
       ) : (
         <>
