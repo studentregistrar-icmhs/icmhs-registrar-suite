@@ -466,6 +466,26 @@ export default function Dashboard({
     }
   }
 
+  // Total Roll: every student in the current view (campus, gender, course,
+  // school and intake filters all apply), one row per student with their
+  // canonical status. Contacts only included when the user may see them.
+  function exportTotalRoll() {
+    const headers = [
+      "Admission No.", "Name", "Gender", "Campus", "Course Code", "Course", "Intake",
+      "Status", ...(canViewContacts ? ["Contacts"] : []),
+    ];
+    const rows = [...filteredStudents]
+      .sort((a, b) => a.status.localeCompare(b.status) || a.admissionNo.localeCompare(b.admissionNo))
+      .map((s) => [
+        s.admissionNo, s.name, s.gender, s.campus === "MAIN" ? "Thika (Main)" : s.campus === "NAKURU" ? "Nakuru" : s.campus,
+        s.courseCode, s.courseName, s.intakeYear, s.status,
+        ...(canViewContacts ? [s.contacts] : []),
+      ]);
+    const campusPart = campus !== "all" ? `-${campus === "main" ? "Thika" : "Nakuru"}` : "";
+    const filterPart = filtersActive ? "-filtered" : "";
+    downloadCsv(`${termLabel.replace(/\s+/g, "-")}-total-roll${campusPart}${filterPart}.csv`, toCsv(headers, rows));
+  }
+
   function exportIntakeMatrix() {
     const { headers, rows } = intakeMatrixToCsvRows(intakeMatrix);
     downloadCsv(`${termLabel.replace(/\s+/g, "-")}-admissions-by-intake.csv`, toCsv(headers, rows));
@@ -932,7 +952,7 @@ export default function Dashboard({
       {tab === "overview" ? (
         <>
           <section style={styles.kpiStrip}>
-            <KpiCard label="Total Roll" value={total} accent={C.ink} big />
+            <KpiCard label="Total Roll" value={total} accent={C.ink} big onDownload={total > 0 ? exportTotalRoll : undefined} />
             {STATUS_ORDER.filter((s) => s.label !== "Unmarked").map((s) => (
               <KpiCard
                 key={s.label}
@@ -1851,7 +1871,7 @@ function TrendStat({ label, current, previous }: { label: string; current: numbe
   );
 }
 
-function KpiCard({ label, value, accent, big, onClick }: { label: string; value: number; accent: string; big?: boolean; onClick?: () => void }) {
+function KpiCard({ label, value, accent, big, onClick, onDownload }: { label: string; value: number; accent: string; big?: boolean; onClick?: () => void; onDownload?: () => void }) {
   return (
     <div
       style={{ ...styles.kpiCard, borderTopColor: accent, cursor: onClick ? "pointer" : "default" }}
@@ -1861,6 +1881,16 @@ function KpiCard({ label, value, accent, big, onClick }: { label: string; value:
       <div style={styles.kpiLabel}>{label}</div>
       <div style={{ ...styles.kpiValue, fontSize: big ? 34 : 26 }}>{fmt(value)}</div>
       {onClick && <div style={styles.kpiHint}>View list →</div>}
+      {onDownload && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onDownload(); }}
+          style={{ ...styles.exportBtn, marginTop: 8, padding: "4px 10px", fontSize: 11.5 }}
+          title="Download the full roll as CSV (respects the active filters)"
+        >
+          ⬇ Download CSV
+        </button>
+      )}
     </div>
   );
 }
