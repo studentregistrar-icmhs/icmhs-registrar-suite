@@ -9,6 +9,7 @@ import {
 import type { DashboardData } from "@/lib/aggregate";
 import type { ConflictRow } from "@/lib/reconcile";
 import { toCsv, downloadCsv, parseCsv } from "@/lib/csv";
+import { buildZip, downloadBlob } from "@/lib/zip";
 import { getDepartment } from "@/lib/departments";
 import { parseIntake } from "@/lib/intake";
 import { buildIntakeMatrix, intakeMatrixToCsvRows } from "@/lib/intakeMatrix";
@@ -113,6 +114,8 @@ export default function Dashboard({
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const [bulkResolvingCategory, setBulkResolvingCategory] = useState<string | null>(null);
   const [carryingForward, setCarryingForward] = useState(false);
+  const [zipOpen, setZipOpen] = useState(false);
+  const [zipSelected, setZipSelected] = useState<string[]>([]);
 
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkFileName, setBulkFileName] = useState("");
@@ -484,6 +487,31 @@ export default function Dashboard({
     const campusPart = campus !== "all" ? `-${campus === "main" ? "Thika" : "Nakuru"}` : "";
     const filterPart = filtersActive ? "-filtered" : "";
     downloadCsv(`${termLabel.replace(/\s+/g, "-")}-total-roll${campusPart}${filterPart}.csv`, toCsv(headers, rows));
+  }
+
+  // One CSV per selected status, bundled into a single .zip. Uses the same
+  // filtered view as the KPI cards, so the files always match the numbers shown.
+  function exportStatusZip() {
+    const headers = [
+      "Admission No.", "Name", "Gender", "Campus", "Course Code", "Course", "Intake",
+      ...(canViewContacts ? ["Contacts"] : []),
+    ];
+    const files = zipSelected
+      .map((status) => {
+        const rows = filteredStudents
+          .filter((s) => s.status === status)
+          .sort((a, b) => a.admissionNo.localeCompare(b.admissionNo))
+          .map((s) => [
+            s.admissionNo, s.name, s.gender, s.campus === "MAIN" ? "Thika (Main)" : s.campus === "NAKURU" ? "Nakuru" : s.campus,
+            s.courseCode, s.courseName, s.intakeYear,
+            ...(canViewContacts ? [s.contacts] : []),
+          ]);
+        return { name: `${status.replace(/[^A-Za-z0-9]+/g, "-")}.csv`, content: toCsv(headers, rows) };
+      });
+    if (files.length === 0) return;
+    const campusPart = campus !== "all" ? `-${campus === "main" ? "Thika" : "Nakuru"}` : "";
+    const filterPart = filtersActive ? "-filtered" : "";
+    downloadBlob(`${termLabel.replace(/\s+/g, "-")}-status-lists${campusPart}${filterPart}.zip`, buildZip(files));
   }
 
   function exportIntakeMatrix() {
@@ -951,6 +979,59 @@ export default function Dashboard({
 
       {tab === "overview" ? (
         <>
+          <section style={{ ...styles.card, padding: "10px 14px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                style={styles.exportBtn}
+                onClick={() => {
+                  if (!zipOpen && zipSelected.length === 0) {
+                    setZipSelected(STATUS_ORDER.filter((s) => (kpis[s.label] ?? 0) > 0).map((s) => s.label));
+                  }
+                  setZipOpen((v) => !v);
+                }}
+              >
+                ⬇ Download status lists (ZIP) {zipOpen ? "▲" : "▼"}
+              </button>
+              <span style={styles.cardNote}>One CSV per status, bundled in a single zip · follows the active filters</span>
+            </div>
+            {zipOpen && (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                  <button type="button" style={styles.exportBtn} onClick={() => setZipSelected(STATUS_ORDER.filter((s) => (kpis[s.label] ?? 0) > 0).map((s) => s.label))}>Select all</button>
+                  <button type="button" style={styles.exportBtn} onClick={() => setZipSelected([])}>Clear</button>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 18px" }}>
+                  {STATUS_ORDER.map((s) => {
+                    const n = kpis[s.label] ?? 0;
+                    return (
+                      <label key={s.label} style={{ fontSize: 13, opacity: n === 0 ? 0.45 : 1, cursor: n === 0 ? "not-allowed" : "pointer" }}>
+                        <input
+                          type="checkbox"
+                          disabled={n === 0}
+                          checked={zipSelected.includes(s.label)}
+                          onChange={(e) =>
+                            setZipSelected((cur) => (e.target.checked ? [...cur, s.label] : cur.filter((x) => x !== s.label)))
+                          }
+                          style={{ marginRight: 6 }}
+                        />
+                        {s.label} ({fmt(n)})
+                      </label>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  disabled={zipSelected.length === 0}
+                  onClick={exportStatusZip}
+                  style={{ ...styles.exportBtn, marginTop: 12, background: C.teal, color: "#fff", borderColor: C.teal, opacity: zipSelected.length === 0 ? 0.5 : 1 }}
+                >
+                  Download {zipSelected.length} file{zipSelected.length === 1 ? "" : "s"} as ZIP
+                </button>
+              </div>
+            )}
+          </section>
+
           <section style={styles.kpiStrip}>
             <KpiCard label="Total Roll" value={total} accent={C.ink} big onDownload={total > 0 ? exportTotalRoll : undefined} />
             {STATUS_ORDER.filter((s) => s.label !== "Unmarked").map((s) => (
